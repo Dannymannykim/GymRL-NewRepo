@@ -4,26 +4,29 @@ import torch
 import time
 from utils import preprocess_data
 from dqn_agent import DQN_Agent
-import torch_directml  # Import torch-directml
 #print(torch_directml.is_available())
 from utils import compile_args
 from pong_env import get_CustomAtariEnv
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+from datetime import datetime
+
 # gymnasium state shape: (r, c, channels)
 # input pytorch shape: batch size, channels, r, c
 
 if __name__ == "__main__":
-    writer = SummaryWriter() # by default, this will create new folders. 
-    # SummaryWriter('runs/folder_name') seems to be not overriding but instead writing over the previous result
 
-    config_path = "configs_cartpole.yaml"
+    game = 'pong'
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    writer = SummaryWriter(log_dir=f'runs/{game}_{timestamp}') # by default, this will create new folders. 
+
+    config_path = "configs_" + game + ".yaml"
 
     game_args, model_args, optimizer_args, training_args, preprocess_args = compile_args(config_path)
 
-    #device = torch_directml.device() 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu") # you only have to specify device manually for pytorch
-
+    print(f"device: {device}")
+    
     env = get_CustomAtariEnv(model_args, preprocess_args, game_args)
     
     action_dim = env.action_space.n #np.array([2, 3]) # atari pong has 6 action spaces but we really only need 2 and 3
@@ -68,6 +71,7 @@ if __name__ == "__main__":
                 end_time = time.time()
                 elapsed_time = end_time - start_time
                 break
+            
         
         if episode % 1 == 0 and episode > agent.batch_size: # change so that it averages over that 100 interval
             writer.add_scalar("reward", ep_reward, episode)
@@ -87,6 +91,15 @@ if __name__ == "__main__":
     end_time = time.time()
     elapsed_time = end_time - start_time
     print(f"Elapsed time: {elapsed_time} seconds")
-
+    torch.save({
+        'model_state_dict': agent.policy_nn.state_dict(),
+        'optimizer_state_dict': agent.policy_nn.state_dict(),
+    }, "checkpoint.pth")
     writer.flush()
     writer.close()
+
+    """
+    checkpoint = torch.load("checkpoint.pth")
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    """

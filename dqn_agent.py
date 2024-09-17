@@ -23,7 +23,7 @@ class DQN_Agent():
         self.epsilon_start = 1.0
         self.epsilon_min = 0.01
         self.epsilon_min_ep = training_args["epsilon_min_ep"]
-        self.epsilon_decay = (self.epsilon_min / self.epsilon_start) ** (1 / 5000)#0.9995
+        self.epsilon_decay = (self.epsilon_min / self.epsilon_start) ** (1 / self.epsilon_min_ep)#0.9995
         self.epsilon = self.epsilon_start
 
         self.actions = range(action_dim)

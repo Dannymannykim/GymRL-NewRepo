@@ -28,6 +28,7 @@ class GeneralDQN(nn.Module):
             else:
                 in_shape = (*state_dim, 1)
         """
+        
         in_channels = state_dim[0] # -1 bc conv shape is (h,w,channel), works for fc shape ; CHANGED: NOW IT'S (channel, h, w)
         #print(state_dim, "S")
         for idx, layer_arg in enumerate(model_args["layer_args"]):
