@@ -8,7 +8,32 @@ from utils import conv_layer_shape
 #l2 = conv_layer_shape(4, 2, 0, l1)
 #l3 = conv_layer_shape(3, 1, 0, l2)
 
-class GeneralDQN(nn.Module):
+def initialize_loss(name):
+    """
+    Args:
+        name (str): The type of loss to use. Can be "MSE" or ....
+    """
+    if name == "MSE":
+        return nn.MSELoss()
+    else:
+        raise ValueError(f"Unsupported loss type: {name}")
+
+def initialize_optimizer(params, name, lr, momentum=0):
+    """
+    Args:
+        params (iterable): The parameters of the model to optimize (usually `model.parameters()`).
+        name (str): The type of optimizer to use. Can be "Adam" or "SGD".
+        lr (float): The learning rate for the optimizer. 
+        momentum (float, optional): Momentum factor for SGD.
+    """
+    if name == "Adam":
+        return torch.optim.Adam(params, lr=lr)
+    elif name == "SGD":
+        return torch.optim.SGD(params, lr=lr, momentum=momentum)
+    else:
+        raise ValueError(f"Unsupported optimizer type: {name}")
+
+class General_NN(nn.Module):
     def __init__(self, state_dim, action_dim, model_args):# for conv, state_dim is shape (h,w,channel); for fc, shape (num_features,)
 
         super().__init__()
@@ -114,6 +139,7 @@ class GeneralDQN(nn.Module):
         #print(self.fc_layers)
     
     def forward(self, x):
+        x = x / 255
         if self.nn_type == "DNN":
             x = self.fc_layers(x)
         elif  self.nn_type == "CNN":

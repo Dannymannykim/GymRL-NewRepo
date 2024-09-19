@@ -48,7 +48,7 @@ def conv_layer_shape(kernel_size, stride, padding, in_shape):
     #print(shape)
     return shape
 
-def preprocess_data(device, frame, model_args):
+def preprocess_data(device, frame, model_args=None):
     """
     Preprocesses an input RGB frame.
 
@@ -66,7 +66,7 @@ def preprocess_data(device, frame, model_args):
         4. Convert the frame to a PyTorch tensor.
         5. Normalize pixel values to the [0, 1] range.
     """
-    #print(frame.shape,"s")
+    """
     if model_args["nn_type"] == "CNN":
         transform = transforms.Compose([
             transforms.ToPILImage(), # consider using another method since frame stacking leads to >4 channels, which PILimage doesnt support.
@@ -78,46 +78,17 @@ def preprocess_data(device, frame, model_args):
         tensor_frame = transform(frame)
     elif model_args["nn_type"] == "DNN":
         tensor_frame = torch.tensor(frame, dtype=torch.float32)
-
-    tensor_frame = tensor_frame.to(device)
+    """
+    
+    tensor_frame = torch.tensor(frame, dtype=torch.float32).permute(2, 0, 1) # (in_channels, h, w)
     
     return tensor_frame
 
-def preprocess_manual(frame):
-    grey_scaled = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY) #(210, 160)
-
-    # Normalize pixel values to [0, 1] by dividing by 255
-    normalized_frame = grey_scaled / 255.0
-
-    #tensor_frame = torch.tensor(normalized_frame, dtype=torch.float32).unsqueeze(0)
-    out = normalized_frame
-    return out
-
-def initialize_loss(name):
-    """
-    Args:
-        name (str): The type of loss to use. Can be "MSE" or ....
-    """
-    if name == "MSE":
-        return nn.MSELoss()
-    else:
-        raise ValueError(f"Unsupported loss type: {name}")
-
-def initialize_optimizer(params, name, lr, momentum=0):
-    """
-    Args:
-        params (iterable): The parameters of the model to optimize (usually `model.parameters()`).
-        name (str): The type of optimizer to use. Can be "Adam" or "SGD".
-        lr (float): The learning rate for the optimizer. 
-        momentum (float, optional): Momentum factor for SGD.
-    """
-    if name == "Adam":
-        return torch.optim.Adam(params, lr=lr)
-    elif name == "SGD":
-        return torch.optim.SGD(params, lr=lr, momentum=momentum)
-    else:
-        raise ValueError(f"Unsupported optimizer type: {name}")
+def preprocess_data2(device, frame, model_args=None):
+    tensor_frame = torch.tensor(frame, dtype=torch.float32).permute(2, 0, 1).to(device) # (in_channels, h, w)
     
+    return tensor_frame
+
 def compile_args(path):
     """
     Compiles and returns the arguments required for the game, model, optimizer, and training configuration.

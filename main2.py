@@ -6,11 +6,10 @@ from utils import preprocess_data
 from agent import DQN_Agent
 #print(torch_directml.is_available())
 from utils import compile_args
-from env import get_CustomAtariEnv, get_env
+from env import get_CustomAtariEnv
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 from datetime import datetime
-from gymnasium.wrappers import GrayscaleObservation, ResizeObservation
 
 # gymnasium state shape: (r, c, channels)
 # input pytorch shape: batch size, channels, r, c
@@ -28,32 +27,40 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu") # you only have to specify device manually for pytorch
     print(f"device: {device}")
     
-    env = get_CustomAtariEnv(model_args, preprocess_args, game_args)
-
+    env = gym.make(game_args["name"]) #get_CustomAtariEnv(model_args, preprocess_args, game_args)
+    
     action_dim = env.action_space.n #np.array([2, 3]) # atari pong has 6 action spaces but we really only need 2 and 3
     state_dim = env.observation_space.shape
-    #print(state_dim)
-    #raise ImportError
-    agent = DQN_Agent(device, action_dim, state_dim, model_args, optimizer_args, training_args)
+    #agent = DQN_Agent(device, action_dim, state_dim, model_args, optimizer_args, training_args)
     
     episodes = training_args["episodes"]
 
-    start_time = time.time()
+    #start_time = time.time()
     step = 0
     best_reward = -9999999
-
+    
     for episode in tqdm(range(episodes), desc="Training episodes"):#for episode in range(episodes):
         state, _ = env.reset()
         
-        state = preprocess_data(device, state, model_args)
+        #state = preprocess_data(device, state, model_args)
+        
         
         ep_reward = 0
         while True:
             step += 1
 
-            action = agent.choose_action(env, state, device) 
-            next_state, reward, terminated, truncated, info = env.step(action)
+            action = torch.tensor(1, dtype=torch.int64, device=device)#agent.choose_action(env, state, device) 
+            #next_state, reward, terminated, truncated, info = env.step(action)
+
+            if step % 764 == 0:
+                break
+            #if terminated or truncated:
+                #end_time = time.time()
+                #elapsed_time = end_time - start_time
+            #    break
             
+            """
+
             ep_reward += reward
 
             reward = torch.tensor(reward, dtype=torch.float, device=device)
@@ -73,7 +80,6 @@ if __name__ == "__main__":
             if terminated or truncated:
                 end_time = time.time()
                 elapsed_time = end_time - start_time
-                print(f"step: {step}")
                 break
             
         
@@ -90,17 +96,22 @@ if __name__ == "__main__":
         
         agent.epsilon = max(agent.epsilon * agent.epsilon_decay, agent.epsilon_min)
         writer.add_scalar("Epsilon vs. Episodes", agent.epsilon, episode)
-            
+            """
+         
     env.close()
-    end_time = time.time()
-    elapsed_time = end_time - start_time
-    print(f"Elapsed time: {elapsed_time} seconds")
+    #end_time = time.time()
+    #elapsed_time = end_time - start_time
+    #print(f"Elapsed time: {elapsed_time} seconds")
+    
+    writer.flush()
+    writer.close()
+
+    """
     torch.save({
         'model_state_dict': agent.policy_nn.state_dict(),
         'optimizer_state_dict': agent.policy_nn.state_dict(),
     }, "checkpoint.pth")
-    writer.flush()
-    writer.close()
+    """
 
     """
     checkpoint = torch.load("checkpoint.pth")
