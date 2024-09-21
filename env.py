@@ -3,14 +3,20 @@ from gymnasium.wrappers import TimeLimit, FrameStackObservation, AtariPreprocess
 from gymnasium.wrappers import GrayscaleObservation, ResizeObservation
 from gymnasium.spaces import Box, Discrete
 import numpy as np
-    
+import ale_py
+
 class ObservationWrapper(gym.ObservationWrapper):
+    """
+    Directly incorporates frame stacking and shape
+    conversion for Pytorch into the environment itself.
+    """
+
     def __init__(self, env):
         super().__init__(env)
 
         old_shape = env.observation_space.shape
         framestack, h, w, in_channels = old_shape
-        new_shape = (framestack * in_channels, h, w)
+        new_shape = (h, w, framestack * in_channels)
 
         self.observation_space = Box(
             low=env.observation_space.low.min(),  # Minimum value from original space
@@ -21,7 +27,7 @@ class ObservationWrapper(gym.ObservationWrapper):
 
     def observation(self, obs):
         framestack, h, w, in_channels = obs.shape
-        reshaped_obs = obs.transpose(0, 3, 1, 2).reshape(h, w, -1)  # Combine framestack and in_channels
+        reshaped_obs = obs.reshape(h, w, -1)  # Combine framestack and in_channels
         return reshaped_obs
     
 def get_CustomAtariEnv(model_args, preprocess_args, game_args):
@@ -33,14 +39,15 @@ def get_CustomAtariEnv(model_args, preprocess_args, game_args):
     Preprocess Options:
         - greyscale observations
         - frame stacking
-        - convertion to tensor
-        - reduced action space (only for "ALE/Pong-v5")
-        - (mandatory) resized to (84, 84) 
+        - resize to (x, y) 
     Note:
-        - For CNNs, a single observation shape is (framestack, h, w, in_channels),
-          even when we don't use frame stack. This is to generalize to all cases.
+        - For CNNs, a single observation shape is (h, w, in_channels).
+          With frame stacks, the shape is (frame_stacks, h, w, in_channels).
+          We want shape (h, w, in_channels * frame_stacks).
         - For DNNs, the shape is (feature_size,).
+        - Reshaping for pytorch shape (in_channels, h, w) will be done separately.
     """
+
     max_episode_steps = game_args.get("max_episode_steps", None)
     render_mode = game_args.get("render_mode", None)
     grayscale_obs = preprocess_args.get("grey-scaled", False)
@@ -52,10 +59,12 @@ def get_CustomAtariEnv(model_args, preprocess_args, game_args):
     
         if (not grayscale_obs and stack_size != 1) or stack_size > 4:
             raise ValueError("Atari games should be grey-scaled for frame stacking since PILImage takes in at most 4 channels! Max frame stack should be 4!") 
-        
-        env = FrameStackObservation(env, stack_size=stack_size)
-        env = ObservationWrapper(env)
-    
+        elif stack_size > 1:
+            env = FrameStackObservation(env, stack_size=stack_size)
+            env = ObservationWrapper(env)
+            #print("SS")
+    #print(env.observation_space.shape, "S")
+    #raise ImportError
     return env
 
 def get_env(model_args, preprocess_args=None, game_args=None):

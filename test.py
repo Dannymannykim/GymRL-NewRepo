@@ -3,7 +3,10 @@ from agent import DQN_Agent
 from utils import compile_args
 from env import get_CustomAtariEnv, get_env
 from datetime import datetime
-import argparse
+
+
+
+
 
 
 if __name__ == "__main__":
@@ -12,12 +15,10 @@ if __name__ == "__main__":
     config_path = "configs_" + game + ".yaml"
     game_args, model_args, optimizer_args, training_args, preprocess_args = compile_args(config_path)
 
-    saved_hyperparameters = {**model_args, **training_args}
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    model_name = f"{game}_{timestamp}"
+    model_file = 'models/pong_bestsofar2.pt'
     
     env = get_env(model_args)#get_CustomAtariEnv(model_args, preprocess_args, game_args)#get_env(model_args)
 
     agent = DQN_Agent(env, model_args, optimizer_args) 
 
-    agent.train(training_args, model_name, saved_hyperparameters)
+    agent.test(model_file)

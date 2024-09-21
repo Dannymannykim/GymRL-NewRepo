@@ -4,23 +4,16 @@ import numpy as np
 import torch
 
 class ReplayBufferDeque():
-    def __init__(self, capacity, device='cpu'):
-        self.capacity = capacity
-        self.buffer = deque(maxlen=self.capacity)
-        self.counter = 0
+    """
+    
+    Complete deque-based replay buffer.
 
-    def add_transition(self, state, next_state, reward, action, terminated):
-        self.buffer.append((state, next_state, reward, action, terminated))
-        self.counter += 1
+    Note: 
+        - Slightly faster than manual implementation
+        of replay buffer that uses pre-initialized
+        numpy arrays as the data structure.
 
-    def sample(self, batch_size):
-        """
-        output: [(state1, next_state1, reward1, action1, terminated1), 
-        (state2, next_state2, reward2, action2, terminated2), ...]
-        """
-        return random.sample(self.buffer, batch_size)
-
-class ReplayBufferDeque2():
+    """
     def __init__(self, capacity, device='cpu'):
         self.capacity = capacity
         self.buffer = deque(maxlen=self.capacity)
@@ -28,28 +21,67 @@ class ReplayBufferDeque2():
 
         self.device = device
 
-    def add_transition(self, state, next_state, reward, action, terminated):
+    def add_transition(self, state, action, next_state, reward, terminated):
+        self.buffer.append((state, action, next_state, reward, terminated))
+        self.counter += 1
+
+    def sample(self, batch_size):
+        """
+        Note: 'state', 'action', 'next_state' are already tensors
+        but 'reward' and 'terminated' are not, so make
+        sure to convert them to tensors. Also, 'states' and
+        'actions' are a tuple of tensors, so use torch.stack to 
+        convert it to a single tensor. DO NOT use torch.tensor
+        for them as you'll get the following error:
+        
+        "ValueError: only one element tensors can be converted to Python scalars"
+
+        """
+        batch = random.sample(self.buffer, batch_size)#random.choices(self.buffer, k=batch_size)#batch = random.sample(self.buffer, batch_size)
+        
+        states, actions, next_states, rewards, terminations = zip(*batch) # e.g. states = (state1, state2, state3, ...)
+        
+        states = torch.stack(states).to(self.device)
+        actions = torch.tensor(actions, dtype=torch.float32).to(self.device)
+        next_states = torch.stack(next_states).to(self.device)
+        rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device)
+        terminations = torch.tensor(terminations, dtype=torch.float32).to(self.device)
+        
+        return states, actions, next_states, rewards, terminations
+    
+class ReplayBufferDeque2():
+    """
+    
+    A simple deque-based replay buffer. [Obsolete]
+    
+    Note: This implementation requires separate tensor conversion 
+    and cuda transfer.
+
+    """
+    def __init__(self, capacity, device='cpu'):
+        self.capacity = capacity
+        self.buffer = deque(maxlen=self.capacity)
+        self.counter = 0
+
+    def add_transition(self, state, action, next_state, reward, terminated):
         self.buffer.append((state, next_state, reward, action, terminated))
         self.counter += 1
 
     def sample(self, batch_size):
         """
-        output: [(state1, next_state1, reward1, action1, terminated1), 
-        (state2, next_state2, reward2, action2, terminated2), ...]
+        output: [(state1, action1, next_state1, reward1, terminated1), 
+        (state2, action2, next_state2, reward2, terminated2), ...]
         """
-        batch = random.sample(self.buffer, batch_size)
-        
-        states, next_states, rewards, actions, terminations = zip(*batch)
-        
-        states = torch.tensor(np.array(states), dtype=torch.float32).to(self.device)
-        actions = torch.tensor(np.array(actions), dtype=torch.float32).to(self.device)
-        next_states = torch.tensor(np.array(next_states), dtype=torch.float32).to(self.device)
-        rewards = torch.tensor(np.array(rewards), dtype=torch.float32).to(self.device)
-        terminations = torch.tensor(np.array(terminations), dtype=torch.float32).to(self.device)
-
-        return states, actions, next_states, rewards, terminations
+        return random.sample(self.buffer, batch_size)
     
 class ReplayBufferManual():
+    """
+
+    A replay buffer that uses numpy arrays, pre-initialized with the
+    size as the underlying data structure. This implementation seems 
+    to be slightly slower than using deque.
+    
+    """
     def __init__(self, capacity, state_shape, device='cpu'):
         self.capacity = capacity
         self.counter = 0
@@ -62,11 +94,11 @@ class ReplayBufferManual():
 
         self.device = device
 
-    def add_transition(self, state, next_state, reward, action, terminated):
+    def add_transition(self, state, action, next_state, reward, terminated):
         idx = self.counter % self.capacity
         
         self.states[idx] = state
-        self.actions[idx] = torch.tensor(action).detach().cpu() #action
+        self.actions[idx] = torch.tensor(action).detach().cpu() 
         self.next_states[idx] = next_state
         self.rewards[idx] = reward
         self.terminations[idx] = terminated
@@ -74,10 +106,6 @@ class ReplayBufferManual():
         self.counter = min(self.counter + 1, self.capacity)
 
     def sample(self, batch_size):
-        """
-        output: [(state1, next_state1, reward1, action1, terminated1), 
-        (state2, next_state2, reward2, action2, terminated2), ...]
-        """
         batch = np.random.choice(self.counter, batch_size) # run w/ replacement (default)
 
         states = self.states[batch]

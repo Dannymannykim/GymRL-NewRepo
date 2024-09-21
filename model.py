@@ -1,18 +1,14 @@
-import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from utils import conv_layer_shape
-
-#l1 = conv_layer_shape(5, 4, 0, (84,84))
-#l2 = conv_layer_shape(4, 2, 0, l1)
-#l3 = conv_layer_shape(3, 1, 0, l2)
+import os
 
 def initialize_loss(name):
     """
     Args:
         name (str): The type of loss to use. Can be "MSE" or ....
     """
+
     if name == "MSE":
         return nn.MSELoss()
     else:
@@ -26,6 +22,7 @@ def initialize_optimizer(params, name, lr, momentum=0):
         lr (float): The learning rate for the optimizer. 
         momentum (float, optional): Momentum factor for SGD.
     """
+
     if name == "Adam":
         return torch.optim.Adam(params, lr=lr)
     elif name == "SGD":
@@ -34,7 +31,8 @@ def initialize_optimizer(params, name, lr, momentum=0):
         raise ValueError(f"Unsupported optimizer type: {name}")
 
 class General_NN(nn.Module):
-    def __init__(self, state_dim, action_dim, model_args):# for conv, state_dim is shape (h,w,channel); for fc, shape (num_features,)
+
+    def __init__(self, state_dim, action_dim, model_args):
 
         super().__init__()
 
@@ -46,16 +44,8 @@ class General_NN(nn.Module):
         if self.nn_type == "CNN":
             in_shape = (state_dim[1], state_dim[2])
         
-        """
-        if self.nn_type == "CNN" and model_args["preprocessing"]["grey-scaled"]:
-            if model_args["preprocessing"]["resize"]["enabled"]:
-                in_shape = (*model_args["preprocessing"]["resize"]["shape"], 1)
-            else:
-                in_shape = (*state_dim, 1)
-        """
-        
         in_channels = state_dim[0] # -1 bc conv shape is (h,w,channel), works for fc shape ; CHANGED: NOW IT'S (channel, h, w)
-        #print(state_dim, "S")
+        
         for idx, layer_arg in enumerate(model_args["layer_args"]):
 
             type = layer_arg["layer_type"]
@@ -104,17 +94,12 @@ class General_NN(nn.Module):
                 in_channels = out_channels
                 in_shape = conv_layer_shape(kernel_size, stride, padding, (in_shape[0], in_shape[1]))
                 
-                
             elif layer_arg["layer_type"] == "flatten":
                 self.conv_layers.add_module("flatten", nn.Flatten())
-                
+            
                 in_channels=in_channels * in_shape[0] * in_shape[1]
             
             elif layer_arg["layer_type"] == "fcl":
-                #if in_shape.shape[0] == in_shape.shape[-1]: #checks if input is of shape (feature,) or (h,w,channel)
-                #print(in_channels)
-                #print(in_channels, in_shape)
-                
                 out_features = layer_arg["n_out"]
                 self.fc_layers.add_module(
                     f"{type}{idx}",
@@ -126,7 +111,7 @@ class General_NN(nn.Module):
                 in_channels = out_features
                 self.fc_layers.add_module(f"relu{idx + 1}", nn.ReLU())
 
-        # add final       
+        # add final output layer
         self.fc_layers.add_module(
             f"{type}{idx+1}",
             nn.Linear(
@@ -134,9 +119,6 @@ class General_NN(nn.Module):
                 out_features=action_dim
             )
         )
-        #print(self.fc_layers, "in", action_dim)
-        #print(self.conv_layers)
-        #print(self.fc_layers)
     
     def forward(self, x):
         x = x / 255
@@ -147,13 +129,28 @@ class General_NN(nn.Module):
             x = self.fc_layers(x)
         return x
     
+    def save_model(self, filename):
+
+        if not os.path.exists('models'):
+            os.makedirs('models')
+
+        torch.save(self.state_dict(), 'models/' + filename + '.pt')
+
+    def load_model(self, file):
+        
+        try:
+            self.load_state_dict(torch.load(file))
+            print(f"Loaded weights from {file}!")
+        except FileNotFoundError:
+            print(f"No weights file found at at {file}!")
+
 class DQN_cnn(nn.Module):
+    """
+    [OBSOLETE]
+    """
+
     def __init__(self, action_dim, state_dim=None) -> None:
         super().__init__()
-
-        # Assume grey-scaled frames
-        # input shape (batch_size, channels, r, c) = (:, 1, 210, 160)
-        # output shape = ([(input_h + 2*padding - kernel_size)/stride] + 1, [(input_w + 2*padding - kernel_size)/stride] + 1)
         
         self.convolution = nn.Sequential(
             nn.Conv2d(1, 32, kernel_size=8, stride=4, padding=0),  #  (:, 16, 105.5 -> 105, 80.5 -> 80)
@@ -177,6 +174,10 @@ class DQN_cnn(nn.Module):
         return x
     
 class DQN_dnn(nn.Module):
+    """
+    [OBSOLETE]
+    """
+
     def __init__(self, action_dim, state_dim) -> None:
         super().__init__()
         

@@ -30,6 +30,7 @@ def create_layer_args(
     Returns:
         dict: A dictionary containing the layer configuration.
     """
+
     return {
         "layer_type": layer_type,
         "n_out": n_out,
@@ -40,7 +41,14 @@ def create_layer_args(
     }
 
 def conv_layer_shape(kernel_size, stride, padding, in_shape):
-    
+    """
+    Compute the output shape of a convolutional/pooling layer given the input shape, kernel size, stride, and padding.
+
+    Returns:
+        tuple: A tuple (output_height, output_width) representing the height and width of the output feature map.
+              The values are integers that correspond to the size of the feature map after applying the convolution.
+    """
+
     shape = (
         math.floor(((in_shape[0] + 2*padding - kernel_size) / stride) + 1), 
         math.floor(((in_shape[1] + 2*padding - kernel_size) / stride) + 1)
@@ -48,9 +56,9 @@ def conv_layer_shape(kernel_size, stride, padding, in_shape):
     #print(shape)
     return shape
 
-def preprocess_data(device, frame, model_args=None):
+def preprocess_data(frame):
     """
-    Preprocesses an input RGB frame.
+    Preprocesses an input frame.
 
     Args:
         frame (numpy.ndarray): RGB frame of shape (H, W, C).
@@ -58,34 +66,13 @@ def preprocess_data(device, frame, model_args=None):
     Returns:
         torch.Tensor: Preprocessed frame of shape (C, H, W).
 
-    Steps:
-        1. Convert the frame (NumPy array) to a PIL image of shape (C, H, W).
-        2. [Ignore] Convert to grayscale, resulting in shape (1, H, W).
-        3. [Ignore] Optionally resize to (1, 84, 84). 
-           (The 84x84 size is a standard for training Atari-based RL agents.)
-        4. Convert the frame to a PyTorch tensor.
-        5. Normalize pixel values to the [0, 1] range.
-    """
-    """
-    if model_args["nn_type"] == "CNN":
-        transform = transforms.Compose([
-            transforms.ToPILImage(), # consider using another method since frame stacking leads to >4 channels, which PILimage doesnt support.
-            #transforms.Grayscale(),   
-            #*( [transforms.Resize(model_args["preprocessing"]["resize"]["shape"])] if model_args["preprocessing"]["resize"]["enabled"] else [] ), #transforms.Resize((84, 84))
-            transforms.ToTensor(), 
-            transforms.Normalize(mean=[0.0], std=[1.0]),  
-        ])
-        tensor_frame = transform(frame)
-    elif model_args["nn_type"] == "DNN":
-        tensor_frame = torch.tensor(frame, dtype=torch.float32)
+    Note: We use gym env, so certain preprocessing steps are 
+    done directly within the env, including resizing and grey-scale.
+    For our implementation, we'll only need to convert to tensor and
+    reshape. Also, normalization is done with the nn model itself.
     """
     
     tensor_frame = torch.tensor(frame, dtype=torch.float32).permute(2, 0, 1) # (in_channels, h, w)
-    
-    return tensor_frame
-
-def preprocess_data2(device, frame, model_args=None):
-    tensor_frame = torch.tensor(frame, dtype=torch.float32).permute(2, 0, 1).to(device) # (in_channels, h, w)
     
     return tensor_frame
 
@@ -95,7 +82,11 @@ def compile_args(path):
     
     Parameters:
         path (str): The path to the configuration or environment data. This may be used to load specific settings or configurations.
+
+    Returns:
+        dict: game_args, model_args, optimizer_args, training_args, preprocess_args
     """
+
     with open(path, "r") as file:
         config = yaml.safe_load(file)
 
@@ -106,4 +97,5 @@ def compile_args(path):
     preprocess_args = config.get("preprocessing", {})
 
     return game_args, model_args, optimizer_args, training_args, preprocess_args
+
 
