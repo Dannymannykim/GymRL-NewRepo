@@ -73,21 +73,10 @@ class DQN_Agent():
         for target_param, param in zip(target_nn.parameters(), source_nn.parameters()):
             target_param.data.copy_(target_param.data * (1.0 - tau) + param.data * tau)
     
-    def train(self, training_args, model_name, saved_hyperparameters):
+    def train(self, training_args, model_name):
 
         writer = SummaryWriter(log_dir='runs/' + model_name)
-
-        # if no save, will be replaced in future runs
-        if not training_args['save_model']:
-            model_name = model_name.split("_")[0] + "_latest"
-
-        # save the hyperparameters
-        if not os.path.exists('models'):
-            os.makedirs('models')
-
-        with open('models/' + model_name +'.yaml', 'w') as f:
-            yaml.dump(saved_hyperparameters, f, default_flow_style=False)
-
+    
         batch_size = training_args['batch_size']
         discount = training_args['discount']
         target_update_interval = training_args['target_update_interval']
@@ -160,8 +149,8 @@ class DQN_Agent():
         writer.flush()
         writer.close()
 
-    def test(self, file):
-        self.policy_nn.load_model(file)
+    def test(self, model_path):
+        self.policy_nn.load_model(model_path)
 
         state, _ = self.env.reset()
         state = preprocess_data(state)

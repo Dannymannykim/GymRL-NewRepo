@@ -1,7 +1,8 @@
 ### YAML Configuration Documentation
 
 #### `game`
-- **`name`** (Mandatory): Name of the game environment (e.g., `CartPole-v1`, `MountainCar-v0`, `ALE/Pong-v5`).
+- **`name`** (Mandatory): Name of the game environment (can be anything). This is simply used for naming model and run files.
+- **`atari_version`** (Mandatory): Official name/version of environment (e.g., `CartPole-v1`, `MountainCar-v0`, `ALE/Pong-v5`).
 - **`max_episode_steps`** (Optional): Maximum number of steps per episode. 
 - **`render_mode`** (Optional): Rendering mode, e.g., `human`, `rgb_array`.
 

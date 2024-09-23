@@ -130,14 +130,15 @@ class General_NN(nn.Module):
         return x
     
     def save_model(self, filename):
-
+        """
+        Creates a directory 'model' and saves model.
+        """
         if not os.path.exists('models'):
             os.makedirs('models')
 
         torch.save(self.state_dict(), 'models/' + filename + '.pt')
 
     def load_model(self, file):
-        
         try:
             self.load_state_dict(torch.load(file))
             print(f"Loaded weights from {file}!")

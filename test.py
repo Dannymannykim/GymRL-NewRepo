@@ -3,7 +3,7 @@ from agent import DQN_Agent
 from utils import compile_args
 from env import get_CustomAtariEnv, get_env
 from datetime import datetime
-
+import argparse
 
 
 
@@ -11,14 +11,21 @@ from datetime import datetime
 
 if __name__ == "__main__":
     
-    game = 'pong'
-    config_path = "configs_" + game + ".yaml"
-    game_args, model_args, optimizer_args, training_args, preprocess_args = compile_args(config_path)
+    parser = argparse.ArgumentParser(
+        description="""Run DQN agent with its corresponding config file. 
+        The config file must have the same name as the model file.
+        The defaul game is Pong."""
+    )
+    parser.add_argument('--config', default='models/pong_latest.yaml', type=str, help="Path to the config YAML file (default: 'models/pong_latest.yaml)")
+    parser.add_argument('--model', default='models/pong_latest.pt', type=str, help="Path to the model file (default: 'models/pong_latest.pt')")
+    args = parser.parse_args()
+    config_path = args.config  
+    model_path = args.model    
 
-    model_file = 'models/pong_bestsofar2.pt'
+    game_args, model_args, optimizer_args, training_args, preprocess_args = compile_args(config_path)
     
-    env = get_env(model_args)#get_CustomAtariEnv(model_args, preprocess_args, game_args)#get_env(model_args)
+    env = get_env(game_args, model_args)#get_CustomAtariEnv(model_args, preprocess_args, game_args)#get_env(model_args)
 
     agent = DQN_Agent(env, model_args, optimizer_args) 
 
-    agent.test(model_file)
+    agent.test(model_path)

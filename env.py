@@ -30,7 +30,7 @@ class ObservationWrapper(gym.ObservationWrapper):
         reshaped_obs = obs.reshape(h, w, -1)  # Combine framestack and in_channels
         return reshaped_obs
     
-def get_CustomAtariEnv(model_args, preprocess_args, game_args):
+def get_CustomAtariEnv(game_args, model_args, preprocess_args):
     """
     Function to load custom or customized environments.
     Game Settings:
@@ -53,7 +53,7 @@ def get_CustomAtariEnv(model_args, preprocess_args, game_args):
     grayscale_obs = preprocess_args.get("grey-scaled", False)
     stack_size = preprocess_args.get("stack_size", 1)
 
-    env = gym.make(game_args["name"], max_episode_steps=max_episode_steps, render_mode=render_mode) 
+    env = gym.make(game_args["atari_version"], max_episode_steps=max_episode_steps, render_mode=render_mode) 
     if model_args["nn_type"] == "CNN":
         env = AtariPreprocessing(env, grayscale_obs=grayscale_obs, grayscale_newaxis=True, frame_skip=1, screen_size=64) # set frame_skip=1 since original env alrdy frame skips
     
@@ -67,9 +67,9 @@ def get_CustomAtariEnv(model_args, preprocess_args, game_args):
     #raise ImportError
     return env
 
-def get_env(model_args, preprocess_args=None, game_args=None):
+def get_env(game_args, model_args, preprocess_args=None):
 
-    env = gym.make("ALE/Pong-v5", render_mode="rgb_array")
+    env = gym.make(game_args['atari_version'], render_mode="rgb_array")
 
     env = ResizeObservation(env, (64, 64))
     
