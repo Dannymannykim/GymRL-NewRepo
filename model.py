@@ -121,7 +121,7 @@ class General_NN(nn.Module):
         )
     
     def forward(self, x):
-        x = x / 255
+        x = x / 255 # change later for DNN
         if self.nn_type == "DNN":
             x = self.fc_layers(x)
         elif  self.nn_type == "CNN":

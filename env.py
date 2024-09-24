@@ -30,6 +30,51 @@ class ObservationWrapper(gym.ObservationWrapper):
         reshaped_obs = obs.reshape(h, w, -1)  # Combine framestack and in_channels
         return reshaped_obs
     
+class CustomEnvWrapper(gym.Wrapper):
+    def __init__(self, env):
+        super().__init__(env)
+
+    def reset(self, seed=None, **kwargs):
+        # Set the seed properly for Atari environments via reset()
+        if seed is not None:
+            # Use the correct method for setting the seed in Gymnasium environments
+            self.env.reset(seed=seed, **kwargs)
+            np.random.seed(seed)  # Ensure NumPy randomness is controlled
+
+        # Call the original reset method
+        obs, info = self.env.reset(**kwargs)
+        return obs, info
+
+class CustomOrderEnforcing(gym.wrappers.OrderEnforcing):
+    def __init__(self, env):
+        super().__init__(env)
+
+    def reset(self, seed=None, **kwargs):
+        # Pass the seed to the underlying environment's reset
+        if seed is not None:
+            return self.env.reset(seed=seed, **kwargs)
+        else:
+            return self.env.reset(**kwargs)
+        
+# Observation wrapper does not take in seed, so we need to override.
+# Note that we only need to override the last wrapper applied that
+# overrides the reset method. ResizeObservation and GreyscaleObservation
+# themselves don't override reset, but their parent wrapper does.
+class CustomResizeObservation(ResizeObservation): 
+    def reset(self, seed=None, **kwargs):
+        # Pass seed to the underlying environment if necessary
+        return super().reset(seed=seed, **kwargs)
+
+class CustomGrayscaleObservation(GrayscaleObservation):
+    def reset(self, seed=None, **kwargs):
+        # Pass seed to the underlying environment if necessary
+        return super().reset(seed=seed, **kwargs)
+
+class CustomGrayscaleObservation(GrayscaleObservation):
+    def reset(self, seed=None, **kwargs):
+        # Pass seed to the underlying environment if necessary
+        return super().reset(seed=seed, **kwargs)
+
 def get_CustomAtariEnv(game_args, model_args, preprocess_args):
     """
     Function to load custom or customized environments.
@@ -67,15 +112,17 @@ def get_CustomAtariEnv(game_args, model_args, preprocess_args):
     #raise ImportError
     return env
 
-def get_env(game_args, model_args, preprocess_args=None):
+def get_env(game_args, model_args):
 
-    env = gym.make(game_args['atari_version'], render_mode="rgb_array")
+    max_episode_steps = game_args.get("max_episode_steps", None)
 
-    env = ResizeObservation(env, (64, 64))
-    
+    env = gym.make(game_args['atari_version'], max_episode_steps=max_episode_steps, render_mode="rgb_array")
+
     if model_args["nn_type"] == "CNN":
 
-        env = GrayscaleObservation(env, keep_dim=True)
+        env = CustomResizeObservation(env, (64, 64))
+
+        env = CustomGrayscaleObservation(env, keep_dim=True)
 
     return env
 

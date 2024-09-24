@@ -14,12 +14,13 @@ class ReplayBufferDeque():
         numpy arrays as the data structure.
 
     """
-    def __init__(self, capacity, device='cpu'):
+    def __init__(self, capacity, device='cpu', seed=0):
         self.capacity = capacity
         self.buffer = deque(maxlen=self.capacity)
         self.counter = 0
 
         self.device = device
+        random.seed(seed)
 
     def add_transition(self, state, action, next_state, reward, terminated):
         self.buffer.append((state, action, next_state, reward, terminated))
@@ -40,7 +41,7 @@ class ReplayBufferDeque():
         batch = random.sample(self.buffer, batch_size)#random.choices(self.buffer, k=batch_size)#batch = random.sample(self.buffer, batch_size)
         
         states, actions, next_states, rewards, terminations = zip(*batch) # e.g. states = (state1, state2, state3, ...)
-        
+       
         states = torch.stack(states).to(self.device)
         actions = torch.tensor(actions, dtype=torch.float32).to(self.device)
         next_states = torch.stack(next_states).to(self.device)

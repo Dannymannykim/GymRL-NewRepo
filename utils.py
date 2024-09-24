@@ -56,7 +56,7 @@ def conv_layer_shape(kernel_size, stride, padding, in_shape):
     #print(shape)
     return shape
 
-def preprocess_data(frame):
+def preprocess_data(input, model_args):
     """
     Preprocesses an input frame.
 
@@ -71,8 +71,17 @@ def preprocess_data(frame):
     For our implementation, we'll only need to convert to tensor and
     reshape. Also, normalization is done with the nn model itself.
     """
-    
-    tensor_frame = torch.tensor(frame, dtype=torch.float32).permute(2, 0, 1) # (in_channels, h, w)
+    if model_args['nn_type'] == 'CNN':
+
+        tensor_frame = torch.tensor(input, dtype=torch.float32).permute(2, 0, 1) # (in_channels, h, w)
+
+    elif model_args['nn_type'] == 'DNN':
+
+        tensor_frame = torch.tensor(input, dtype=torch.float32)
+        #print(input.shape, tensor_frame.shape, "S")
+    else:
+
+        raise NotImplementedError
     
     return tensor_frame
 

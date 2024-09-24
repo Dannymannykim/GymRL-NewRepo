@@ -16,14 +16,26 @@ import os
 import cv2
 
 class DQN_Agent():
-    def __init__(self, env, model_args, optimizer_args):
+    def __init__(self, env, model_name, model_args, optimizer_args, training_args, seed=None):
+
+        if seed:
+            random.seed(seed)
+            np.random.seed(seed)
+            torch.manual_seed(seed)
+            torch.cuda.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+            env.action_space.seed(seed)
+
         self.env = env
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"device: {self.device}")
 
-        state, _ = env.reset()
-        state = preprocess_data(state)
+        state, _ = env.reset(seed=seed)
+
+        state = preprocess_data(state, model_args)
         self.policy_nn = General_NN(state_dim=state.shape, action_dim=env.action_space.n, model_args=model_args).to(self.device)
         self.target_nn = General_NN(state_dim=state.shape, action_dim=env.action_space.n, model_args=model_args).to(self.device)
 
@@ -31,15 +43,28 @@ class DQN_Agent():
 
         self.optimizer = initialize_optimizer(self.policy_nn.parameters(), **optimizer_args)
         
-        self.replay_buffer = ReplayBufferDeque(capacity=500000, device=self.device) 
+        self.replay_buffer = ReplayBufferDeque(capacity=500000, device=self.device, seed=seed) 
+
+        self.model_name = model_name
+
+        self.model_args = model_args
+
+        self.training_args = training_args
+
+        self.seed = seed 
 
     def choose_action(self, env, state, epsilon):
+        """
+        Pong has Box (continuous) action space, so actions can be tensors.
+        Cartpole has Discrete action space, so actions can't be tensors.
+        """
         if random.random() < epsilon:
             action = env.action_space.sample()
-            action = torch.tensor(action, dtype=torch.int64)
+            #action = torch.tensor(action, dtype=torch.int64)
         else:
             # unsqueeze state to add batch axis since nn expects it. revert after.
-            action = torch.argmax(self.compute_qvals(state.unsqueeze(0))).squeeze(0)
+            action = torch.argmax(self.compute_qvals(state.unsqueeze(0))).squeeze(0).item() # convert tensor to python scalar for cartpole (works for pong as well)
+            
         return action
         
     def compute_qvals(self, state, target=False):
@@ -73,17 +98,18 @@ class DQN_Agent():
         for target_param, param in zip(target_nn.parameters(), source_nn.parameters()):
             target_param.data.copy_(target_param.data * (1.0 - tau) + param.data * tau)
     
-    def train(self, training_args, model_name):
+    def train(self):
 
-        writer = SummaryWriter(log_dir='runs/' + model_name)
-    
-        batch_size = training_args['batch_size']
-        discount = training_args['discount']
-        target_update_interval = training_args['target_update_interval']
+        writer = SummaryWriter(log_dir='runs/' + self.model_name) # causes overwrite issues
 
-        epsilon = training_args["epsilon"]
-        epsilon_min = training_args["epsilon_min"]
-        epsilon_min_ep = training_args["epsilon_min_ep"]
+        episodes = self.training_args['episodes']
+        batch_size = self.training_args['batch_size']
+        discount = self.training_args['discount']
+        target_update_interval = self.training_args['target_update_interval']
+
+        epsilon = self.training_args["epsilon"]
+        epsilon_min = self.training_args["epsilon_min"]
+        epsilon_min_ep = self.training_args["epsilon_min_ep"]
         #epsilon_decay = training_args["epsilon_decay"]#(epsilon_min / epsilon_start) ** (1 / self.epsilon_min_ep)#0.9995
         epsilon_start = epsilon
         epsilon_decay = (epsilon_min / epsilon_start) ** (1 / epsilon_min_ep)
@@ -92,9 +118,10 @@ class DQN_Agent():
         best_reward = -9999999
         start_time = time.time()
 
-        for episode in tqdm(range(training_args['episodes']), desc="Training episodes"):
-            state, _ = self.env.reset()
-            state = preprocess_data(state)
+        for episode in tqdm(range(episodes), desc="Training episodes"):
+            state, _ = self.env.reset(seed=self.seed)
+
+            state = preprocess_data(state, self.model_args)
             
             ep_reward = 0
             terminated = False
@@ -106,8 +133,8 @@ class DQN_Agent():
                 
                 reward = 0
 
-                for _ in range(4):
-
+                for _ in range(1):
+                    
                     next_state, step_reward, terminated, truncated, _ = self.env.step(action)
 
                     reward += step_reward
@@ -117,7 +144,7 @@ class DQN_Agent():
                 
                 ep_reward += reward       
             
-                next_state = preprocess_data(next_state)
+                next_state = preprocess_data(next_state, self.model_args)
 
                 self.replay_buffer.add_transition(state, action, next_state, reward, terminated)
                 
@@ -126,7 +153,7 @@ class DQN_Agent():
                 state = next_state
 
                 if step % target_update_interval == 0:
-                    self.soft_update_target(self.policy_nn, self.target_nn)
+                    self.hard_update_target()
             
             #epsilon = max(epsilon * epsilon_decay, epsilon_min)
             epsilon = max(epsilon_start * (epsilon_decay ** episode), epsilon_min)
@@ -139,10 +166,11 @@ class DQN_Agent():
                 best_reward = ep_reward
                 print(f"\nBest episode so far!", end="")
 
-            self.policy_nn.save_model(model_name)
+            self.policy_nn.save_model(self.model_name)
 
             writer.add_scalar("reward", ep_reward, episode)
-            writer.add_scalar("loss", loss, episode)
+            if loss:
+                writer.add_scalar("loss", loss, episode)
             writer.add_scalar('epsilon', epsilon, episode)
             
         self.env.close()
@@ -152,8 +180,9 @@ class DQN_Agent():
     def test(self, model_path):
         self.policy_nn.load_model(model_path)
 
-        state, _ = self.env.reset()
-        state = preprocess_data(state)
+        state, _ = self.env.reset(seed=self.seed)
+
+        state = preprocess_data(state, self.model_args)
 
         ep_reward = 0
         
@@ -187,6 +216,6 @@ class DQN_Agent():
                 if terminated:
                     break
 
-            state = preprocess_data(next_state)
+            state = preprocess_data(next_state, self.model_args)
 
             ep_reward += reward
