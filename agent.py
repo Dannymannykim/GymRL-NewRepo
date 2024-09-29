@@ -16,42 +16,42 @@ import os
 import cv2
 
 class DQN_Agent():
-    def __init__(self, env, model_name, model_args, optimizer_args, training_args, seed=None):
+    def __init__(self, env, file_pth, model_args, optimizer_args, training_args):
 
-        if seed:
-            random.seed(seed)
-            np.random.seed(seed)
-            torch.manual_seed(seed)
-            torch.cuda.manual_seed(seed)
-            torch.cuda.manual_seed_all(seed)
+        self.file_pth = file_pth
+
+        self.model_args = model_args
+
+        self.training_args = training_args
+
+        self.seed = training_args.get('seed', None) 
+
+        if self.seed is not None:
+            random.seed(self.seed)
+            np.random.seed(self.seed)
+            torch.manual_seed(self.seed)
+            torch.cuda.manual_seed(self.seed)
+            torch.cuda.manual_seed_all(self.seed)
             torch.backends.cudnn.deterministic = True
             torch.backends.cudnn.benchmark = False
-            env.action_space.seed(seed)
+            env.action_space.seed(self.seed)
 
         self.env = env
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"device: {self.device}")
 
-        state, _ = env.reset(seed=seed)
+        state, _ = env.reset(seed=self.seed)
 
         state = preprocess_data(state, model_args)
         self.policy_nn = General_NN(state_dim=state.shape, action_dim=env.action_space.n, model_args=model_args).to(self.device)
         self.target_nn = General_NN(state_dim=state.shape, action_dim=env.action_space.n, model_args=model_args).to(self.device)
-
+        
         self.loss_fn = initialize_loss(model_args["loss"]) #nn.MSELoss() # consider Huber loss
 
         self.optimizer = initialize_optimizer(self.policy_nn.parameters(), **optimizer_args)
         
-        self.replay_buffer = ReplayBufferDeque(capacity=500000, device=self.device, seed=seed) 
-
-        self.model_name = model_name
-
-        self.model_args = model_args
-
-        self.training_args = training_args
-
-        self.seed = seed 
+        self.replay_buffer = ReplayBufferDeque(capacity=training_args['buffer_size'], device=self.device, seed=self.seed) 
 
     def choose_action(self, env, state, epsilon):
         """
@@ -72,6 +72,8 @@ class DQN_Agent():
             q_values = self.target_nn(state)
         else:
             q_values = self.policy_nn(state)
+            #print(state, q_values)
+            #raise ImportError
         return q_values
 
     def update_weights(self, discount, batch_size):
@@ -88,6 +90,7 @@ class DQN_Agent():
             
             self.optimizer.zero_grad()
             loss.backward()
+            #torch.nn.utils.clip_grad_norm_(self.policy_nn.parameters(), max_norm=1.0)
             self.optimizer.step()
         return loss
     
@@ -100,19 +103,21 @@ class DQN_Agent():
     
     def train(self):
 
-        writer = SummaryWriter(log_dir='runs/' + self.model_name) # causes overwrite issues
+        writer = SummaryWriter(log_dir='runs/' + self.file_pth) # causes overwrite issues
 
         episodes = self.training_args['episodes']
-        batch_size = self.training_args['batch_size']
-        discount = self.training_args['discount']
+        batch_size = self.training_args.get('batch_size', 64)
+        discount = self.training_args.get('discount', 0.99)
+        target_update_method = self.training_args.get('target_update_method', 'hard')
         target_update_interval = self.training_args['target_update_interval']
+        step_repeat = self.training_args.get('step_repeat', 1)
 
-        epsilon = self.training_args["epsilon"]
-        epsilon_min = self.training_args["epsilon_min"]
-        epsilon_min_ep = self.training_args["epsilon_min_ep"]
-        #epsilon_decay = training_args["epsilon_decay"]#(epsilon_min / epsilon_start) ** (1 / self.epsilon_min_ep)#0.9995
+        epsilon = self.training_args.get('epsilon', 1)
+        epsilon_min = self.training_args.get('epsilon_min', 0.01)
+        epsilon_min_ep = self.training_args.get('epsilon_min_ep', episodes * 0.8)
+        epsilon_decay = self.training_args.get('epsilon_decay', None)
         epsilon_start = epsilon
-        epsilon_decay = (epsilon_min / epsilon_start) ** (1 / epsilon_min_ep)
+        epsilon_decay_exp = (epsilon_min / epsilon_start) ** (1 / epsilon_min_ep)
         
         step = 0
         best_reward = -9999999
@@ -125,15 +130,16 @@ class DQN_Agent():
             
             ep_reward = 0
             terminated = False
+            truncated = False
             
-            while not terminated:
+            while not (terminated or truncated):
                 step += 1
 
                 action = self.choose_action(self.env, state.to(self.device), epsilon) 
                 
                 reward = 0
 
-                for _ in range(1):
+                for _ in range(step_repeat):
                     
                     next_state, step_reward, terminated, truncated, _ = self.env.step(action)
 
@@ -151,27 +157,37 @@ class DQN_Agent():
                 loss = self.update_weights(discount, batch_size)
                 
                 state = next_state
-
+                
                 if step % target_update_interval == 0:
-                    self.hard_update_target()
+
+                    if target_update_method == 'soft':
+                        self.soft_update_target(self.policy_nn, self.target_nn)
+                    elif target_update_method == 'hard':
+                        self.hard_update_target()
+                    else:
+                        raise NotImplementedError
             
-            #epsilon = max(epsilon * epsilon_decay, epsilon_min)
-            epsilon = max(epsilon_start * (epsilon_decay ** episode), epsilon_min)
+            if not epsilon_decay:
+                epsilon = max(epsilon_start * (epsilon_decay_exp ** episode), epsilon_min)
+            else:
+                epsilon = max(epsilon * epsilon_decay, epsilon_min)
 
             end_time = time.time()
             elapsed_time = end_time - start_time
-            print(f"\nCompleted episode {episode} with score {ep_reward} in {elapsed_time} seconds! Epsilon: {epsilon}.\n")
+            #print(f"\nCompleted episode {episode} with score {ep_reward} in {elapsed_time} seconds! Epsilon: {epsilon}.\n")
 
             if ep_reward > best_reward:
                 best_reward = ep_reward
-                print(f"\nBest episode so far!", end="")
+                print(f"\nBest episode so far! Completed episode {episode} with score {ep_reward}! Elapsed time: {elapsed_time} seconds. Epsilon: {epsilon}.")
+                #print(self.policy_nn.state_dict())
 
-            self.policy_nn.save_model(self.model_name)
+            self.policy_nn.save_model(self.file_pth)
 
             writer.add_scalar("reward", ep_reward, episode)
             if loss:
                 writer.add_scalar("loss", loss, episode)
             writer.add_scalar('epsilon', epsilon, episode)
+            
             
         self.env.close()
         writer.flush()
@@ -179,6 +195,8 @@ class DQN_Agent():
 
     def test(self, model_path):
         self.policy_nn.load_model(model_path)
+        
+        #self.policy_nn.eval()
 
         state, _ = self.env.reset(seed=self.seed)
 
@@ -187,35 +205,44 @@ class DQN_Agent():
         ep_reward = 0
         
         terminated = False
+        truncated = False
 
-        while not terminated:
+        step = 0
+
+        while not (terminated or truncated):
             
             action = self.choose_action(self.env, state.to(self.device), epsilon=0.05) 
 
             reward = 0
+
+            step += 1
                 
-            for i in range(4):
+            for i in range(self.training_args['step_repeat']):
 
                 next_state, step_reward, terminated, truncated, _ = self.env.step(action)
 
                 reward += step_reward
 
-                frame = self.env.env.env.render() # unwrap wrappers
+                #frame = self.env.env.env.render() # unwrap wrappers
 
-                resized_frame = cv2.resize(frame, (500, 400))
+                #resized_frame = cv2.resize(frame, (500, 400))
 
-                resized_frame = cv2.cvtColor(resized_frame, cv2.COLOR_RGB2BGR)
+                #resized_frame = cv2.cvtColor(resized_frame, cv2.COLOR_RGB2BGR)
 
-                cv2.imshow("Pong AI", resized_frame)
+                #cv2.imshow("Pong AI", resized_frame)
 
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    break
+                #if cv2.waitKey(1) & 0xFF == ord('q'):
+                #    break
 
-                time.sleep(0.05)
-
+                #time.sleep(0.05)
+    
                 if terminated:
+                    print(f"Game end at step: {step}, reward: {ep_reward}!")
                     break
+            
+            if step % 500 == 0:
+                print(f"Step: {step}!")
 
-            state = preprocess_data(next_state, self.model_args)
-
+            next_state = preprocess_data(next_state, self.model_args)
+            state = next_state
             ep_reward += reward

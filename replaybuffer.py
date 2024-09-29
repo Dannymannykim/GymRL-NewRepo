@@ -5,15 +5,14 @@ import torch
 
 class ReplayBufferDeque():
     """
-    
     Complete deque-based replay buffer.
 
     Note: 
         - Slightly faster than manual implementation
         of replay buffer that uses pre-initialized
         numpy arrays as the data structure.
-
     """
+
     def __init__(self, capacity, device='cpu', seed=0):
         self.capacity = capacity
         self.buffer = deque(maxlen=self.capacity)
@@ -28,17 +27,16 @@ class ReplayBufferDeque():
 
     def sample(self, batch_size):
         """
-        Note: 'state', 'action', 'next_state' are already tensors
-        but 'reward' and 'terminated' are not, so make
-        sure to convert them to tensors. Also, 'states' and
-        'actions' are a tuple of tensors, so use torch.stack to 
-        convert it to a single tensor. DO NOT use torch.tensor
-        for them as you'll get the following error:
+        Note: 'state', 'next_state' are already tensors
+        but the rest are not, so make sure to convert them to tensors. 
+        Also, 'states' and 'next_states' are a tuple of tensors, so use 
+        torch.stack to convert it to a single tensor. DO NOT 
+        use torch.tensor for them as you'll get the following error:
         
         "ValueError: only one element tensors can be converted to Python scalars"
-
         """
-        batch = random.sample(self.buffer, batch_size)#random.choices(self.buffer, k=batch_size)#batch = random.sample(self.buffer, batch_size)
+
+        batch = random.sample(self.buffer, batch_size)#random.choices(self.buffer, k=batch_size)
         
         states, actions, next_states, rewards, terminations = zip(*batch) # e.g. states = (state1, state2, state3, ...)
        
@@ -52,13 +50,12 @@ class ReplayBufferDeque():
     
 class ReplayBufferDeque2():
     """
-    
     A simple deque-based replay buffer. [Obsolete]
     
     Note: This implementation requires separate tensor conversion 
     and cuda transfer.
-
     """
+    
     def __init__(self, capacity, device='cpu'):
         self.capacity = capacity
         self.buffer = deque(maxlen=self.capacity)
@@ -77,12 +74,11 @@ class ReplayBufferDeque2():
     
 class ReplayBufferManual():
     """
-
     A replay buffer that uses numpy arrays, pre-initialized with the
     size as the underlying data structure. This implementation seems 
     to be slightly slower than using deque.
-    
     """
+
     def __init__(self, capacity, state_shape, device='cpu'):
         self.capacity = capacity
         self.counter = 0

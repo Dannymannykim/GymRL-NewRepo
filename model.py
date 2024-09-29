@@ -6,7 +6,7 @@ import os
 def initialize_loss(name):
     """
     Args:
-        name (str): The type of loss to use. Can be "MSE" or ....
+        - name (str): The type of loss to use. Can be "MSE" or ....
     """
 
     if name == "MSE":
@@ -17,10 +17,10 @@ def initialize_loss(name):
 def initialize_optimizer(params, name, lr, momentum=0):
     """
     Args:
-        params (iterable): The parameters of the model to optimize (usually `model.parameters()`).
-        name (str): The type of optimizer to use. Can be "Adam" or "SGD".
-        lr (float): The learning rate for the optimizer. 
-        momentum (float, optional): Momentum factor for SGD.
+        - params (iterable): The parameters of the model to optimize (usually `model.parameters()`).
+        - name (str): The type of optimizer to use. Can be "Adam" or "SGD".
+        - lr (float): The learning rate for the optimizer. 
+        - momentum (float, optional): Momentum factor for SGD.
     """
 
     if name == "Adam":
@@ -29,14 +29,25 @@ def initialize_optimizer(params, name, lr, momentum=0):
         return torch.optim.SGD(params, lr=lr, momentum=momentum)
     else:
         raise ValueError(f"Unsupported optimizer type: {name}")
+    
+def initialize_activation(activation):
+    if activation == 'relu':
+        return nn.ReLU()
+    elif activation == 'leaky_relu':
+        return nn.LeakyReLU()
+    else:
+        raise ValueError(f"Unsupported activation type: {activation}")
+    
+    
 
 class General_NN(nn.Module):
 
     def __init__(self, state_dim, action_dim, model_args):
-
+        #self.count = 0
         super().__init__()
 
         self.nn_type = model_args["nn_type"]
+        self.activation = initialize_activation(model_args.get('activation', 'relu'))
         
         self.conv_layers = nn.Sequential()
         self.fc_layers = nn.Sequential()
@@ -52,9 +63,9 @@ class General_NN(nn.Module):
 
             if type == "conv" or type == "pooling":
                 
-                kernel_size = layer_arg["kernel_size"]
-                stride = layer_arg["stride"]
-                padding  = layer_arg["padding"]
+                kernel_size = layer_arg['kernel_size']
+                stride = layer_arg.get('stride', 1)
+                padding  = layer_arg.get('padding', 0)
                 
                 if type == "conv":
                     out_channels = layer_arg["n_out"]
@@ -68,7 +79,7 @@ class General_NN(nn.Module):
                             padding=padding
                         )
                     )
-                    self.conv_layers.add_module(f"relu{idx + 1}", nn.ReLU())
+                    self.conv_layers.add_module(f"{model_args.get('activation', 'relu')}{idx + 1}", self.activation)
 
                 if type == "pooling": 
                     if layer_arg["pooling_type"] == "max":
@@ -109,7 +120,7 @@ class General_NN(nn.Module):
                     )
                 )
                 in_channels = out_features
-                self.fc_layers.add_module(f"relu{idx + 1}", nn.ReLU())
+                self.fc_layers.add_module(f"{model_args.get('activation', 'relu')}{idx + 1}", self.activation)
 
         # add final output layer
         self.fc_layers.add_module(
@@ -121,26 +132,29 @@ class General_NN(nn.Module):
         )
     
     def forward(self, x):
-        x = x / 255 # change later for DNN
+        
         if self.nn_type == "DNN":
             x = self.fc_layers(x)
         elif  self.nn_type == "CNN":
+            x = x / 255
             x = self.conv_layers(x)
             x = self.fc_layers(x)
+        
         return x
     
-    def save_model(self, filename):
+    def save_model(self, file_pth):
         """
         Creates a directory 'model' and saves model.
         """
         if not os.path.exists('models'):
             os.makedirs('models')
 
-        torch.save(self.state_dict(), 'models/' + filename + '.pt')
+        torch.save(self.state_dict(), os.path.join('models', file_pth + '.pt'))
 
     def load_model(self, file):
         try:
             self.load_state_dict(torch.load(file))
+            self.eval() # for dropout or batch normalization
             print(f"Loaded weights from {file}!")
         except FileNotFoundError:
             print(f"No weights file found at at {file}!")

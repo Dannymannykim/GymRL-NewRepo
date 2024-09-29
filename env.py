@@ -7,6 +7,8 @@ import ale_py
 
 class ObservationWrapper(gym.ObservationWrapper):
     """
+    [OBSOLETE]
+
     Directly incorporates frame stacking and shape
     conversion for Pytorch into the environment itself.
     """
@@ -29,43 +31,23 @@ class ObservationWrapper(gym.ObservationWrapper):
         framestack, h, w, in_channels = obs.shape
         reshaped_obs = obs.reshape(h, w, -1)  # Combine framestack and in_channels
         return reshaped_obs
-    
-class CustomEnvWrapper(gym.Wrapper):
-    def __init__(self, env):
-        super().__init__(env)
-
-    def reset(self, seed=None, **kwargs):
-        # Set the seed properly for Atari environments via reset()
-        if seed is not None:
-            # Use the correct method for setting the seed in Gymnasium environments
-            self.env.reset(seed=seed, **kwargs)
-            np.random.seed(seed)  # Ensure NumPy randomness is controlled
-
-        # Call the original reset method
-        obs, info = self.env.reset(**kwargs)
-        return obs, info
-
-class CustomOrderEnforcing(gym.wrappers.OrderEnforcing):
-    def __init__(self, env):
-        super().__init__(env)
-
-    def reset(self, seed=None, **kwargs):
-        # Pass the seed to the underlying environment's reset
-        if seed is not None:
-            return self.env.reset(seed=seed, **kwargs)
-        else:
-            return self.env.reset(**kwargs)
         
+# Some wrappers applied to the environment may override the original
+# reset method and exlude the seed attribute. In such cases, simply
+# create a custom wrapper of the top-most wrapper (last wrapper applied
+# that overrides the reset method without seed). Below are some examples.
+
+# Also note that some overrides accept seed but enforce keyword-only arguments,
+# meaning you have to specify 'seed', e.g. env.reset(seed=seed). This happens
+# in implementations that use *, e.g. def reset(*, seed=None). If a function 
+# has * in its parameter list, any argument that appears after * must be passed 
+# as a keyword argument.
+
 # Observation wrapper does not take in seed, so we need to override.
 # Note that we only need to override the last wrapper applied that
 # overrides the reset method. ResizeObservation and GreyscaleObservation
 # themselves don't override reset, but their parent wrapper does.
 class CustomResizeObservation(ResizeObservation): 
-    def reset(self, seed=None, **kwargs):
-        # Pass seed to the underlying environment if necessary
-        return super().reset(seed=seed, **kwargs)
-
-class CustomGrayscaleObservation(GrayscaleObservation):
     def reset(self, seed=None, **kwargs):
         # Pass seed to the underlying environment if necessary
         return super().reset(seed=seed, **kwargs)
@@ -98,7 +80,7 @@ def get_CustomAtariEnv(game_args, model_args, preprocess_args):
     grayscale_obs = preprocess_args.get("grey-scaled", False)
     stack_size = preprocess_args.get("stack_size", 1)
 
-    env = gym.make(game_args["atari_version"], max_episode_steps=max_episode_steps, render_mode=render_mode) 
+    env = gym.make(game_args["version"], max_episode_steps=max_episode_steps, render_mode=render_mode) 
     if model_args["nn_type"] == "CNN":
         env = AtariPreprocessing(env, grayscale_obs=grayscale_obs, grayscale_newaxis=True, frame_skip=1, screen_size=64) # set frame_skip=1 since original env alrdy frame skips
     
@@ -115,14 +97,15 @@ def get_CustomAtariEnv(game_args, model_args, preprocess_args):
 def get_env(game_args, model_args):
 
     max_episode_steps = game_args.get("max_episode_steps", None)
+    render_mode = game_args.get("render_mode", "rgb_array")
 
-    env = gym.make(game_args['atari_version'], max_episode_steps=max_episode_steps, render_mode="rgb_array")
-
+    env = gym.make(game_args['version'], max_episode_steps=max_episode_steps, render_mode=render_mode)
+    
     if model_args["nn_type"] == "CNN":
 
-        env = CustomResizeObservation(env, (64, 64))
+        env = ResizeObservation(env, (64, 64))
 
-        env = CustomGrayscaleObservation(env, keep_dim=True)
+        env = GrayscaleObservation(env, keep_dim=True)
 
     return env
 

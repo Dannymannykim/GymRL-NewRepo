@@ -1,8 +1,4 @@
 import torch
-import cv2
-from torchvision import transforms
-import os
-import torch.nn as nn
 import math
 import yaml
 import numpy as np
@@ -20,7 +16,7 @@ def create_layer_args(
 
     Create a dictionary of arguments for defining a layer (exclude output layer). 
 
-    Parameters:
+    Args:
         layer_type (str): The type of layer to create. Available options are:
             - "fcl": Fully connected layer
             - "conv": Convolutional layer
@@ -58,38 +54,35 @@ def conv_layer_shape(kernel_size, stride, padding, in_shape):
 
 def preprocess_data(input, model_args):
     """
-    Preprocesses an input frame.
+    Preprocesses an input.
 
     Args:
-        frame (numpy.ndarray): RGB frame of shape (H, W, C).
+        For CNN -> frame: frame of shape (H, W, C).
+        For DNN -> features: features of shape (num_features,) 
 
     Returns:
-        torch.Tensor: Preprocessed frame of shape (C, H, W).
+        For CNN -> torch.Tensor: Preprocessed frame of shape (C, H, W).
+        For DNN -> torch.Tensor: Preprocessed input of shape (num_features,).
 
     Note: We use gym env, so certain preprocessing steps are 
     done directly within the env, including resizing and grey-scale.
     For our implementation, we'll only need to convert to tensor and
     reshape. Also, normalization is done with the nn model itself.
     """
+
     if model_args['nn_type'] == 'CNN':
-
-        tensor_frame = torch.tensor(input, dtype=torch.float32).permute(2, 0, 1) # (in_channels, h, w)
-
+        tensor_input = torch.tensor(input, dtype=torch.float32).permute(2, 0, 1)
     elif model_args['nn_type'] == 'DNN':
-
-        tensor_frame = torch.tensor(input, dtype=torch.float32)
-        #print(input.shape, tensor_frame.shape, "S")
+        tensor_input = torch.tensor(input, dtype=torch.float32)
     else:
-
         raise NotImplementedError
-    
-    return tensor_frame
+    return tensor_input
 
 def compile_args(path):
     """
     Compiles and returns the arguments required for the game, model, optimizer, and training configuration.
     
-    Parameters:
+    Args:
         path (str): The path to the configuration or environment data. This may be used to load specific settings or configurations.
 
     Returns:
