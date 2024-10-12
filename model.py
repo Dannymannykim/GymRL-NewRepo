@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from utils import conv_layer_shape
 import os
+from torch.distributions import Categorical
 
 def initialize_loss(name):
     """
@@ -42,11 +43,12 @@ def initialize_activation(activation):
 
 class General_NN(nn.Module):
 
-    def __init__(self, state_dim, action_dim, model_args):
+    def __init__(self, state_dim, action_dim, model_args, alg_args):
         #self.count = 0
         super().__init__()
 
         self.nn_type = model_args["nn_type"]
+        self.alg_args = alg_args
         self.activation = initialize_activation(model_args.get('activation', 'relu'))
         
         self.conv_layers = nn.Sequential()
@@ -109,6 +111,8 @@ class General_NN(nn.Module):
                 self.conv_layers.add_module("flatten", nn.Flatten())
             
                 in_channels=in_channels * in_shape[0] * in_shape[1]
+
+            
             
             elif layer_arg["layer_type"] == "fcl":
                 out_features = layer_arg["n_out"]
@@ -135,10 +139,18 @@ class General_NN(nn.Module):
         
         if self.nn_type == "DNN":
             x = self.fc_layers(x)
-        elif  self.nn_type == "CNN":
+
+        elif self.nn_type == "CNN":
             x = x / 255
             x = self.conv_layers(x)
             x = self.fc_layers(x)
+        
+        if self.alg_args['type'] == 'VPG':
+            
+            if self.alg_args['continuous']:
+                pass
+            else:
+                x = Categorical(logits=x) # Note: returns dist NOT tensor
         
         return x
     

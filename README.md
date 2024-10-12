@@ -9,6 +9,10 @@ to specify the values because they have default settings.
 - **`max_episode_steps`** (Optional): Maximum number of steps per episode. [DEFAULT: None (will default to game's own settings; use -1 for no limit at all)]
 - **`render_mode`** (Optional): Rendering mode, e.g., `human`, `rgb_array`.
 
+#### `algorithm`
+- **`type`** (Mandatory): Type of algorithm to implement (e.g., `DQN`, `VPG`).
+- **`continuous`** (Optional): Boolean for whether action space is discrete or cont. Must be false for DQN. [Default: False]
+
 #### `model`
 - **`name_tag`** (Mandatory): For naming model and config files. Leave empty string "" if  not used.
 - **`nn_type`** (Mandatory): Neural network type (`DNN`, `CNN`, etc.).

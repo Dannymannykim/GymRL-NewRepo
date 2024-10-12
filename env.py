@@ -89,17 +89,12 @@ def get_CustomAtariEnv(game_args, model_args, preprocess_args):
         elif stack_size > 1:
             env = FrameStackObservation(env, stack_size=stack_size)
             env = ObservationWrapper(env)
-            #print("SS")
-    #print(env.observation_space.shape, "S")
-    #raise ImportError
+            
     return env
 
 def get_env(game_args, model_args):
 
-    max_episode_steps = game_args.get("max_episode_steps", None)
-    render_mode = game_args.get("render_mode", "rgb_array")
-
-    env = gym.make(game_args['version'], max_episode_steps=max_episode_steps, render_mode=render_mode)
+    env = gym.make(game_args['version'], max_episode_steps=game_args['max_episode_steps'], render_mode=game_args['render_mode'])
     
     if model_args["nn_type"] == "CNN":
 

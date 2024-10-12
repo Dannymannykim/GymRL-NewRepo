@@ -97,7 +97,8 @@ def compile_args(path):
     model_args = config["model"]
     training_args = config["training"]
     preprocess_args = config.get("preprocessing", {})
+    alg_args = config["algorithm"]
 
-    return game_args, model_args, optimizer_args, training_args, preprocess_args
+    return game_args, model_args, optimizer_args, training_args, preprocess_args, alg_args
 
 
