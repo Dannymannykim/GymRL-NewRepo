@@ -4,7 +4,7 @@ from utils import compile_args
 from env import get_CustomAtariEnv, get_env
 import argparse
 from agent import initialize_agent
-
+from agent import DQN_Agent, VPG_Agent, TD3_Agent
 
 
 
@@ -21,28 +21,19 @@ if __name__ == "__main__":
     model_path = args.model
     config_path = model_path.replace('.pt', '.yaml')
 
-    game_args, model_args, optimizer_args, training_args, preprocess_args, alg_args = compile_args(config_path)
+    game_args, _, training_args, model_args, parameters = compile_args(config_path)
     
-    # Set default settings
     game_args.setdefault('max_episode_steps', None)
     game_args.setdefault('render_mode', 'rgb_array')
-    alg_args.setdefault('continuous', False)
-    training_args.setdefault('batch_size', 64)
-    training_args.setdefault('discount', 0.99)
-    training_args.setdefault('target_update_method', 'hard')
-    training_args.setdefault('step_repeat', 1)
-    training_args.setdefault('epsilon', 1)
-    training_args.setdefault('epsilon_min', 0.01)
-    training_args.setdefault('epsilon_min_ep', training_args['episodes'] * 0.8)
-    training_args.setdefault('epsilon_decay', None)
 
     # Optional for manually changing certain settings
-    seed = None 
-    training_args['seed'] = seed
+    seed = None
+    parameters['seed'] = seed
     game_args['render_mode'] = 'human'
+    alg_type = training_args['alg']
     
     env = get_env(game_args, model_args)#get_CustomAtariEnv(model_args, preprocess_args, game_args)#get_env(model_args)
     file_pth = None
-    agent = initialize_agent(env, file_pth, model_args, optimizer_args, training_args, alg_args) 
+    agent = initialize_agent(env, alg_type, file_pth, model_args, parameters) #TD3_Agent(env, file_pth, model_args, **parameters) 
 
     agent.test(model_path)

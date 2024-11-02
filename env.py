@@ -4,6 +4,8 @@ from gymnasium.wrappers import GrayscaleObservation, ResizeObservation
 from gymnasium.spaces import Box, Discrete
 import numpy as np
 import ale_py
+from stable_baselines3.common.vec_env import SubprocVecEnv
+from stable_baselines3.common.env_util import make_vec_env
 
 class ObservationWrapper(gym.ObservationWrapper):
     """
@@ -92,15 +94,64 @@ def get_CustomAtariEnv(game_args, model_args, preprocess_args):
             
     return env
 
-def get_env(game_args, model_args):
+def make_env(env_id, rank, seed=0):
+    def _init():
+        env = gym.make(env_id)
+        # Set seed for reproducibility (optional, adjust as needed)
+        env.reset(seed=seed + rank)
+        return env
+    return _init
 
-    env = gym.make(game_args['version'], max_episode_steps=game_args['max_episode_steps'], render_mode=game_args['render_mode'])
+def get_env(game_args, model_args, seed=None, vectorize=False, num_envs=None):
+    """
+    Note:
+        - For CNNs, a single observation shape is (h, w, in_channels).
+          With frame stacks, the shape is (frame_stacks, h, w, in_channels).
+          We want shape (h, w, in_channels * frame_stacks).
+        - For DNNs, the shape is (feature_size,).
+        - Reshaping for pytorch shape (in_channels, h, w) will be done separately.
+    """
+    game_id = game_args['version']
+    render_mode = game_args['render_mode']
+
+    max_ep_steps = game_args['max_episode_steps']
+    frame_stack = game_args['frame_stack']
+
+    policy_type = model_args["nn_type"]
+
+    #env = SubprocVecEnv([make_env(env_id, i) for i in range(num_envs)])
+    wrapper = (lambda env: GrayscaleObservation(ResizeObservation(env, (64, 64)), keep_dim=True)) if model_args["nn_type"] == "CNN" else None
+    if vectorize:
+        #env = make_vec_env(
+        #    env_id=game_args['version'],
+        #    n_envs=3,
+        #    vec_env_cls=SubprocVecEnv,
+        #    wrapper_class=wrapper,
+        #    seed=seed
+        #) # this gives shape (24,) for observation_space and sampling action gives action for one env.
+        env = gym.make_vec(game_args['version'], num_envs=num_envs, vectorization_mode="async", render_mode=game_args['render_mode'])
+        
+    else:
+        env = gym.make(game_id, max_episode_steps=max_ep_steps, render_mode=render_mode)
+        
+        if policy_type == "CNN":
+            
+            env = ResizeObservation(env, (84, 84))  
+
+            env = GrayscaleObservation(env, keep_dim=True)
+
+            if frame_stack is not None:
+                env = FrameStackObservation(env, stack_size=frame_stack)
+
+                env = ObservationWrapper(env) # check if this breaks seeding
+            
+            #if game_args['frame_stack'] != 1: # not checked
+            #    env = FrameStackObservation(env, stack_size=game_args['frame_stack'])
+        #else:
+            #print(env.observation_space.shape, 'd')
+            #if game_args['frame_stack'] != 1: # not checked
+            #    env = FrameStackObservation(env, stack_size=game_args['frame_stack'])    
+            #    print(env.observation_space.shape, 'ds')
     
-    if model_args["nn_type"] == "CNN":
-
-        env = ResizeObservation(env, (64, 64))
-
-        env = GrayscaleObservation(env, keep_dim=True)
-
     return env
 

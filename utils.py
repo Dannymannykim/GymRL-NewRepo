@@ -68,14 +68,18 @@ def preprocess_data(input, model_args):
     done directly within the env, including resizing and grey-scale.
     For our implementation, we'll only need to convert to tensor and
     reshape. Also, normalization is done with the nn model itself.
-    """
 
+    FOR CNNs, VECTORIZED ENVS MAY NOT WORK AS IS. FIX ACCORDINGLY!
+    """
+    
     if model_args['nn_type'] == 'CNN':
         tensor_input = torch.tensor(input, dtype=torch.float32).permute(2, 0, 1)
     elif model_args['nn_type'] == 'DNN':
         tensor_input = torch.tensor(input, dtype=torch.float32)
+        
     else:
         raise NotImplementedError
+    
     return tensor_input
 
 def compile_args(path):
@@ -86,19 +90,18 @@ def compile_args(path):
         path (str): The path to the configuration or environment data. This may be used to load specific settings or configurations.
 
     Returns:
-        dict: game_args, model_args, optimizer_args, training_args, preprocess_args
+        dict: game_args, preprocess_args, training_args, model_args, parameters
     """
 
-    with open(path, "r") as file:
+    with open(path, encoding="utf-8") as file:
         config = yaml.safe_load(file)
 
     game_args = config["game"]
-    optimizer_args = config["optimizer"]
-    model_args = config["model"]
-    training_args = config["training"]
     preprocess_args = config.get("preprocessing", {})
-    alg_args = config["algorithm"]
+    training_args = config["training"]
+    model_args = config["model"]
+    parameters = config["parameters"]
 
-    return game_args, model_args, optimizer_args, training_args, preprocess_args, alg_args
+    return game_args, preprocess_args, training_args, model_args, parameters
 
 
