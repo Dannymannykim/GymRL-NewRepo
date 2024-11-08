@@ -1,6 +1,6 @@
 from agent import DQN_Agent, VPG_Agent, TD3_Agent
 from utils import compile_args
-from env import get_CustomAtariEnv, get_env
+from env import get_env
 #from agent import initialize_agent
 from datetime import datetime
 import argparse
@@ -44,10 +44,9 @@ if __name__ == "__main__":
 
     game_args, _, training_args, model_args, parameters = compile_args(config_path) # preprocessor args not used
 
-    # Set default settings. Some may not be used depending on alg. Note: There are mandatory settings that must be preset in config YAML file.
-    # Default settings/parameters for algorithms are set separately and follow Stable Baseline3's default values.
+    # Set default settings. Some may not be used depending on alg. Note: These are settings that may not be preset in config YAML file.
     game_args.setdefault('max_episode_steps', None)
-    game_args.setdefault('frame_stack', 1) # do for test.py too
+    game_args.setdefault('frame_stack', None) # do for test.py too
     game_args.setdefault('render_mode', 'rgb_array')
     training_args.setdefault('num_envs', None)
     training_args.setdefault('vectorized', False)
@@ -65,13 +64,12 @@ if __name__ == "__main__":
     os.makedirs(os.path.join('models', game_name), exist_ok=True)
     shutil.copy(config_path, os.path.join('models', f'{file_pth}.yaml'))
 
-    # Training arguments.
+    # Inputs to environment/agent initializations and training.
     alg_type = training_args['alg']
     vectorized = training_args['vectorized']
     num_envs = training_args['num_envs']
     #episodes = training_args['episodes']
     timesteps = training_args['timesteps']
-
     seed = parameters['seed']
     
     # Initialize game environment. Note that vectorized env is available but the envs are not entirely independent due to shared resets.

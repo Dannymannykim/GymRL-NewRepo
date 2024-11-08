@@ -1,7 +1,7 @@
 from agent import DQN_Agent
 #print(torch_directml.is_available())
 from utils import compile_args
-from env import get_CustomAtariEnv, get_env
+from env import get_env
 import argparse
 from agent import initialize_agent
 from agent import DQN_Agent, VPG_Agent, TD3_Agent

@@ -59,49 +59,6 @@ class CustomGrayscaleObservation(GrayscaleObservation):
         # Pass seed to the underlying environment if necessary
         return super().reset(seed=seed, **kwargs)
 
-def get_CustomAtariEnv(game_args, model_args, preprocess_args):
-    """
-    Function to load custom or customized environments.
-    Game Settings:
-        - render_mode
-        - max_episode_steps
-    Preprocess Options:
-        - greyscale observations
-        - frame stacking
-        - resize to (x, y) 
-    Note:
-        - For CNNs, a single observation shape is (h, w, in_channels).
-          With frame stacks, the shape is (frame_stacks, h, w, in_channels).
-          We want shape (h, w, in_channels * frame_stacks).
-        - For DNNs, the shape is (feature_size,).
-        - Reshaping for pytorch shape (in_channels, h, w) will be done separately.
-    """
-
-    max_episode_steps = game_args.get("max_episode_steps", None)
-    render_mode = game_args.get("render_mode", None)
-    grayscale_obs = preprocess_args.get("grey-scaled", False)
-    stack_size = preprocess_args.get("stack_size", 1)
-
-    env = gym.make(game_args["version"], max_episode_steps=max_episode_steps, render_mode=render_mode) 
-    if model_args["nn_type"] == "CNN":
-        env = AtariPreprocessing(env, grayscale_obs=grayscale_obs, grayscale_newaxis=True, frame_skip=1, screen_size=64) # set frame_skip=1 since original env alrdy frame skips
-    
-        if (not grayscale_obs and stack_size != 1) or stack_size > 4:
-            raise ValueError("Atari games should be grey-scaled for frame stacking since PILImage takes in at most 4 channels! Max frame stack should be 4!") 
-        elif stack_size > 1:
-            env = FrameStackObservation(env, stack_size=stack_size)
-            env = ObservationWrapper(env)
-            
-    return env
-
-def make_env(env_id, rank, seed=0):
-    def _init():
-        env = gym.make(env_id)
-        # Set seed for reproducibility (optional, adjust as needed)
-        env.reset(seed=seed + rank)
-        return env
-    return _init
-
 def get_env(game_args, model_args, seed=None, vectorize=False, num_envs=None):
     """
     Note:
@@ -110,6 +67,8 @@ def get_env(game_args, model_args, seed=None, vectorize=False, num_envs=None):
           We want shape (h, w, in_channels * frame_stacks).
         - For DNNs, the shape is (feature_size,).
         - Reshaping for pytorch shape (in_channels, h, w) will be done separately.
+    
+    Maybe set defaults here.
     """
     game_id = game_args['version']
     render_mode = game_args['render_mode']
@@ -135,23 +94,12 @@ def get_env(game_args, model_args, seed=None, vectorize=False, num_envs=None):
         env = gym.make(game_id, max_episode_steps=max_ep_steps, render_mode=render_mode)
         
         if policy_type == "CNN":
-            
             env = ResizeObservation(env, (84, 84))  
-
             env = GrayscaleObservation(env, keep_dim=True)
 
             if frame_stack is not None:
                 env = FrameStackObservation(env, stack_size=frame_stack)
-
                 env = ObservationWrapper(env) # check if this breaks seeding
-            
-            #if game_args['frame_stack'] != 1: # not checked
-            #    env = FrameStackObservation(env, stack_size=game_args['frame_stack'])
-        #else:
-            #print(env.observation_space.shape, 'd')
-            #if game_args['frame_stack'] != 1: # not checked
-            #    env = FrameStackObservation(env, stack_size=game_args['frame_stack'])    
-            #    print(env.observation_space.shape, 'ds')
     
     return env
 

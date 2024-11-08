@@ -83,6 +83,7 @@ class DQN_Agent():
             exp_frac=0.1,
             step_repeat=1,
             target_update_interval=1,
+            grad_norm_max=10,
             seed=None
     ):
         self.env = env
@@ -102,6 +103,7 @@ class DQN_Agent():
         self.exp_frac = exp_frac
         self.step_repeat = step_repeat
         self.target_update_interval = target_update_interval
+        self.grad_norm_max = grad_norm_max
         self.seed = seed
 
         if self.seed is not None:
@@ -131,7 +133,7 @@ class DQN_Agent():
 
         self.n_updates = 0 # for debugging
 
-    def choose_action(self, state, epsilon, step=None):
+    def choose_action(self, state, epsilon):
         """
         Selects an action using an epsilon-greedy strategy.
 
@@ -141,18 +143,17 @@ class DQN_Agent():
             epsilon (float): The probability of choosing a random action.
 
         Returns:
-            Action (int): The chosen discrete action.
+            Action (torch.Tensor): The chosen discrete action.
 
         Note: DQNs only work with discrete action spaces.
-        In gym envs with Discrete action space, actions are generally integers. Tensors may raise errors. 
+        Gym envs take in actions as int so make sure to change them later.
         """
         if np.random.random() < epsilon:
             action = self.env.action_space.sample()
             action = torch.tensor(action)
-            
         else:
             # unsqueeze state to add batch axis since Pytorch nn expects it (CNN-type states will raise mismatch errors otherwise)
-            with torch.no_grad(): # maybe remove
+            with torch.no_grad():
                 q_values = self.compute_qvals(state.unsqueeze(0)) 
                 # revert batch axis and convert tensor to python scalar [outdated]; change description
                 action = torch.argmax(q_values).squeeze(0).detach().cpu()
@@ -180,15 +181,15 @@ class DQN_Agent():
 
         Returns:
             losses (torch.Tensor): The loss values for critic1 and critic2 respectively.
+
+        
         """
         # States is of shape torch.Size([batch, features]) but actions is of shape torch.Size([batch]). Convert actions to torch.Size([batch, 1])
     
         preds = self.compute_qvals(states)[torch.arange(states.size(0)), actions.long()]
         
         with torch.no_grad():
-            # change gamma to alg_args
             next_q_vals= torch.max(self.compute_qvals(next_states, True), dim=1)[0]
-
             targets = rewards + next_q_vals * (1 - terminations) * self.gamma
 
         loss = self.loss_fn(preds, targets) # Huber loss (less sensitive to outliers)
@@ -214,9 +215,6 @@ class DQN_Agent():
         self.optimizer.step()
         
         return loss
-    
-    def hard_update_target(self):
-        self.target_nn.load_state_dict(self.policy_nn.state_dict())
 
     def soft_update_target(self, source_nn, target_nn):
         with torch.no_grad():
@@ -231,7 +229,8 @@ class DQN_Agent():
         best_rew_mean = -999999
         start_time = time.time()
 
-        state, _ = self.env.reset(seed=self.seed) # Call with seed only the first time
+        # Call with seed only the first time to avoid recurring episodes.
+        state, _ = self.env.reset(seed=self.seed) 
         state = preprocess_data(state, self.model_args)
         ep_reward = 0
         ep_rewards = []
@@ -287,9 +286,9 @@ class DQN_Agent():
                 ep_rewards.append(ep_reward)  
                 if len(ep_rewards) > 100:
                     ep_rewards.pop(0)
-                ep_rew_mean = int(sum(ep_rewards) / len(ep_rewards))
-                if ep_rew_mean > best_rew_mean:
-                    best_rew_mean = ep_rew_mean
+                ep_rew_mean = sum(ep_rewards) / len(ep_rewards)
+                if int(ep_rew_mean) > best_rew_mean:
+                    best_rew_mean = int(ep_rew_mean)
                     print(f"\nBest reward so far! Completed episode {episode} with score {best_rew_mean}! "
                           f"Elapsed time: {elapsed_time} seconds. Epsilon: {self.epsilon}. Step: {step}.")
                     self.policy_nn.save_model(self.file_pth)

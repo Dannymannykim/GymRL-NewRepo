@@ -4,3 +4,8 @@ env/
 venv/
 envs/
 /envs/
+models/
+runs/
+tensorboard_logs/
+tuning_configs/
+__pycache__/
