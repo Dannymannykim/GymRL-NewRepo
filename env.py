@@ -4,8 +4,6 @@ from gymnasium.wrappers import GrayscaleObservation, ResizeObservation
 from gymnasium.spaces import Box, Discrete
 import numpy as np
 import ale_py
-from stable_baselines3.common.vec_env import SubprocVecEnv
-from stable_baselines3.common.env_util import make_vec_env
 
 class ObservationWrapper(gym.ObservationWrapper):
     """

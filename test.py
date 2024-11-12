@@ -25,7 +25,7 @@ if __name__ == "__main__":
     
     game_args.setdefault('max_episode_steps', None)
     game_args.setdefault('render_mode', 'rgb_array')
-
+    game_args.setdefault('frame_stack', None)
     # Optional for manually changing certain settings
     seed = None
     parameters['seed'] = seed

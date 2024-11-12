@@ -68,7 +68,7 @@ if __name__ == "__main__":
     alg_type = training_args['alg']
     vectorized = training_args['vectorized']
     num_envs = training_args['num_envs']
-    #episodes = training_args['episodes']
+    episodes = training_args['episodes']
     timesteps = training_args['timesteps']
     seed = parameters['seed']
     
@@ -78,7 +78,7 @@ if __name__ == "__main__":
     agent = initialize_agent(env, alg_type, file_pth, model_args, parameters) 
     #agent = TD3_Agent(env, file_pth, model_args, **parameters) 
     
-    agent.train(timesteps, num_envs)
+    agent.train_new(timesteps, num_envs)
 
     # consider separate performance memory to sample from the good experiences so that it isnt replaced with bad ones.
 
