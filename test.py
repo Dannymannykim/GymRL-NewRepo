@@ -30,10 +30,10 @@ if __name__ == "__main__":
     seed = None
     parameters['seed'] = seed
     game_args['render_mode'] = 'human'
-    alg_type = training_args['alg']
+    #alg_type = training_args['alg']
     
     env = get_env(game_args, model_args)#get_CustomAtariEnv(model_args, preprocess_args, game_args)#get_env(model_args)
     file_pth = None
-    agent = initialize_agent(env, alg_type, file_pth, model_args, parameters) #TD3_Agent(env, file_pth, model_args, **parameters) 
+    agent = initialize_agent(env, training_args, model_args, parameters, file_pth) #TD3_Agent(env, file_pth, model_args, **parameters) 
 
     agent.test(model_path)

@@ -16,7 +16,7 @@ from ou_noise import OU_Noise
 import gymnasium as gym
 from gymnasium import vector
 
-def initialize_agent(env, type, file_pth, model_args, parameters):
+def initialize_agent(env, training_args, model_args, parameters, file_pth):
     """
     Initializes a RL agent based on given settings.
 
@@ -33,12 +33,12 @@ def initialize_agent(env, type, file_pth, model_args, parameters):
         'TD3': TD3_Agent
     }
     
-    Agent = agent_classes.get(type)
+    Agent = agent_classes.get(training_args['alg'])
 
     if Agent is None:
         raise NotImplementedError("Agent type is not implemented!")
-
-    return Agent(env, file_pth, model_args, **parameters)
+    
+    return Agent(env, training_args, model_args, file_pth, **parameters)
 
 class DQN_Agent():
     """
@@ -84,8 +84,9 @@ class DQN_Agent():
     def __init__(
             self, 
             env, 
-            file_pth, 
+            training_args, 
             model_args,
+            file_pth,
             lr=0.001,
             buffer_size=1_000_000,
             learning_starts=100,
@@ -130,6 +131,8 @@ class DQN_Agent():
         self.optimizer = initialize_optimizer(self.policy_nn.parameters(), self.optimizer_type, self.lr)
         
         self.buffer = ReplayBufferDeque(capacity=self.buffer_size, device=self.device, seed=self.seed) 
+
+        self.double_dqn = training_args.get('double_dqn', False)
 
         self.n_updates = 0 # for debugging
 
@@ -213,7 +216,14 @@ class DQN_Agent():
         preds = self.compute_qvals(states)[torch.arange(states.size(0)), actions.long()]
         
         with torch.no_grad():
-            next_q_vals= torch.max(self.compute_qvals(next_states, True), dim=1)[0]
+            if self.double_dqn:
+                next_actions = torch.argmax(self.compute_qvals(next_states, False), dim=1) # selecting action on online policy
+                next_q_vals = self.compute_qvals(next_states, target=True).gather(
+                    1, next_actions.unsqueeze(1)).squeeze(1) # evaluation action on target policy
+                # next_q_vals = self.compute_qvals(next_states, target=True)[torch.arange(next_states.size(0)), next_actions.long()]
+            else:
+                next_q_vals= torch.max(self.compute_qvals(next_states, True), dim=1)[0]
+
             targets = rewards + next_q_vals * (1 - terminations) * self.gamma
 
         loss = self.loss_fn(preds, targets)
@@ -225,7 +235,7 @@ class DQN_Agent():
         
         return loss
 
-    def update_target(self, source_nn, target_nn): # CHANGE NAME TO JUST UPDATE_TARGET; change def doc on tau
+    def update_target(self, target_nn, source_nn): # CHANGE NAME TO JUST UPDATE_TARGET; change def doc on tau
         """
         Performs hard or soft update based on tau.
         """
@@ -269,7 +279,7 @@ class DQN_Agent():
             
             # soft (polyak) update; or tau = 1 for hard updates
             if (step >= self.learning_starts) and (step % self.target_update_interval == 0):
-                self.update_target(self.policy_nn, self.target_nn)
+                self.update_target(self.target_nn, self.policy_nn)
                 
             if (step >= self.learning_starts) and (step % self.train_freq == 0):
                 losses = []
@@ -295,7 +305,7 @@ class DQN_Agent():
                 elapsed_time = end_time - start_time
 
                 ep_rewards.append(ep_reward)  
-                if len(ep_rewards) > 100:
+                if len(ep_rewards) > 50:
                     ep_rewards.pop(0)
                 ep_rew_mean = sum(ep_rewards) / len(ep_rewards)
                 if int(ep_rew_mean) > best_rew_mean:
@@ -360,8 +370,9 @@ class VPG_Agent():
     def __init__(
             self, 
             env, 
-            file_pth, 
+            training_args,
             model_args, 
+            file_pth, 
             lr=0.001,
             gamma=0.99,
             optimizer_type='Adam',
@@ -546,8 +557,9 @@ class TD3_Agent():
     def __init__(
             self, 
             env, 
-            file_pth, 
+            training_args,
             model_args, 
+            file_pth, 
             lr_critic=1e-3,
             lr_actor=1e-3,
             buffer_size=1_000_000,
@@ -604,6 +616,7 @@ class TD3_Agent():
         self.critic1_targ.load_state_dict(self.critic1.state_dict()) # use hard update method
         self.critic2_targ.load_state_dict(self.critic2.state_dict())
         
+        # IMPORTANT: Model's forward method applies tanh and scales to env space
         model_args['output_transform'] = 'tanh'
         self.actor = General_NN(state_dim, action_dim, model_args, action_max).to(self.device)
         #self.actor.apply(self.init_weights)
@@ -683,41 +696,37 @@ class TD3_Agent():
                 The current state, shape `(state_dim,)` or `(c, h, w)`.
 
         Returns:
-            action (torch.Tensor): 
-                A tensor of shape `(action_dim,)` representing the selected 
+            action_env (torch.Tensor): 
+                A tensor of shape `(action_dim,)` representing the selected, unscaled
+                continuous action. Exploration noise is added to encourage exploration. 
+                The action is also clipped to lie within the environment's action space bounds.
+            action_buffer (torch.Tensor):
+                A tensor of shape `(action_dim,)` representing the selected, scaled
                 continuous action with exploration noise added. The action is clipped 
                 to lie within the environment's action space bounds.
-
-        Note: To avoid mismatch error, add batch dimension to state.
         """
         # Action is a tensor on cuda so copy to cpu for env to process it when taking step. [obsolete] This wasn't an issue in dqn implementation bc we used .item(), 
-        # but we want action to remain as tensors (fact check) so just move to cpu manually. Check with bipedal walker.
+        # but we want action to remain as tensors so just move to cpu manually.
         if rand:
             action = self.env.action_space.sample()
             action = torch.tensor(action)
         else:
             with torch.no_grad():
                 action = self.actor(state.unsqueeze(0)).squeeze(0).cpu() # Add batch dim just for input to model. Detach from grad.
-        # shapes may be diff for discrete cases; ignore for now
-        #if isinstance(self.action_space, spaces.Box):
-        action_scaled = 2.0 * ((action - self.action_low) / (self.action_high - self.action_low)) - 1.0
+                
+                if self.noise_type == 'OU':
+                    expl_noise = self.ou_noise.sample() # consider expl_noise = torch.tensor(self.ou_noise.sample(), dtype=torch.float32).to(self.device)
+                elif self.noise_type == 'Gaussian':
+                    #expl_noise_std = self.noise_std #0.1 * float(self.env.action_space.high[0])
+                    expl_noise = torch.randn_like(action) * self.noise_std#expl_noise_std
+                else:
+                    raise NotImplementedError("Noise type not implemented!")
+            
+                action += expl_noise
 
-        if self.noise_type == 'OU':
-            expl_noise = self.ou_noise.sample() # consider expl_noise = torch.tensor(self.ou_noise.sample(), dtype=torch.float32).to(self.device)
-        elif self.noise_type == 'Gaussian':
-            #expl_noise_std = self.noise_std #0.1 * float(self.env.action_space.high[0])
-            expl_noise = torch.randn_like(action_scaled) * self.noise_std#expl_noise_std
-        else:
-            raise NotImplementedError("Noise type not implemented!")
+                action = torch.clamp(action, self.action_low, self.action_high)
         
-        action_scaled += expl_noise
-
-        action_scaled = torch.clamp(action, self.action_low, self.action_high)
-
-        action_buffer = action_scaled
-
-        action_env = self.action_low + (0.5 * (action_scaled + 1.0) * (self.action_high - self.action_low))
-        return action_env, action_buffer
+        return action
 
     def update_q(self, states, actions, next_states, rewards, terminations):
         """
@@ -738,7 +747,6 @@ class TD3_Agent():
         Returns:
             losses (torch.Tensor): The loss values for critic1 and critic2 respectively.
         """
-        
         if isinstance(self.env, vector.VectorEnv):
             action_clip = float(self.env.action_space.high[0][0])
         else:
@@ -749,7 +757,7 @@ class TD3_Agent():
 
             policy_noise_std = 0.2
             noise = torch.normal(mean=0.0, std=policy_noise_std, size=targ_actions.shape).to(self.device)
-            noise_clip = 0.5#action_clip * 0.5 # general case from ChatGPT. Fact check.
+            noise_clip = 0.5
 
             targ_actions_clamped = torch.clamp(
                 targ_actions + torch.clamp(
@@ -796,7 +804,7 @@ class TD3_Agent():
                 Scalar policy loss used for optimization.
         """
         
-        actions = self.actor(states) # may need clipping here
+        actions = self.actor(states)
        
         loss = -torch.mean(self.critic1(states, actions))
         self.actor_optimizer.zero_grad()
@@ -806,7 +814,7 @@ class TD3_Agent():
         
         return loss
 
-    def update_target(self, target_nn, source_nn): # CHANGE NAME TO JUST UPDATE_TARGET; change def doc on tau
+    def update_target(self, target_nn, source_nn):
         """
         Performs hard or soft update based on tau.
         """
@@ -814,81 +822,7 @@ class TD3_Agent():
             for target_param, param in zip(target_nn.parameters(), source_nn.parameters()):
                 target_param.data.copy_(target_param.data * (1.0 - self.tau) + param.data * self.tau)
 
-    def train2(self, episodes, num_envs=None):
-        
-        writer = SummaryWriter(log_dir='runs/' + self.file_pth) # causes overwrite issues
-
-        step = 0
-        best_reward = -9999999
-        start_time = time.time()
-
-        loss_policy = None
-        policy_update_counter = 0
-        
-        for episode in tqdm(range(episodes), desc="Training episodes"):
-            
-            state, _ = self.env.reset(seed=self.seed)
-            state = preprocess_data(state, self.model_args)
-            
-            ep_reward = 0
-            terminated = False
-            truncated = False
-            done = terminated or truncated
-            while not (done):
-                step += 1
-
-                if step < self.learning_starts: # start_steps 
-                    action = self.env.action_space.sample()
-                    action = torch.tensor(action, dtype=torch.float32)
-                else:
-                    action = self.compute_action_old(state.to(self.device))
-                #print(action)
-                
-                next_state, reward, terminated, truncated, _ = self.env.step(action.numpy())
-                
-                next_state = preprocess_data(next_state, self.model_args)
-                
-                done = terminated or truncated
-
-                self.buffer.add_transition(state, action, next_state, reward, done)
-                
-                if (step >= self.learning_starts) and (self.buffer.size >= self.batch_size) and (step % self.train_freq == 0):
-
-                    for _ in range(self.gradient_steps):
-                        policy_update_counter += 1
-
-                        states, actions, next_states, rewards, dones = self.buffer.sample(self.batch_size)
-                        
-                        loss = self.update_q(states, actions, next_states, rewards, dones)
-
-                        if policy_update_counter % self.policy_delay == 0:
-                            loss_policy = self.update_policy(states)
-                            self.update_target(self.critic1_targ, self.critic1)
-                            self.update_target(self.critic2_targ, self.critic2)
-                            self.update_target(self.actor_targ, self.actor)
-                        
-                state = next_state
-
-                ep_reward += reward
-
-            end_time = time.time()
-            elapsed_time = end_time - start_time
-
-            if ep_reward > best_reward:
-                best_reward = ep_reward
-                print(f"\nBest episode so far! Completed episode {episode} with score {ep_reward}! Elapsed time: {elapsed_time} seconds. Step: {step}.")
-
-            self.actor.save_model(self.file_pth)
-
-            writer.add_scalar("reward", ep_reward, episode)
-            if loss_policy is not None:
-                writer.add_scalar("loss", loss_policy, episode)
-            
-        self.env.close()
-        writer.flush()
-        writer.close()
-
-    def train_new(self, total_steps, num_envs=None):
+    def train(self, total_steps, num_envs=None):
         writer = SummaryWriter(log_dir='runs/' + self.file_pth)
         
         episode = 0
@@ -906,17 +840,11 @@ class TD3_Agent():
 
         for step in tqdm(range(total_steps), desc="Training steps"):
 
-            if step < self.learning_starts: # start_steps 
-                action_env, action_buffer = self.compute_action(state.to(self.device), rand=True)
-                
-            else:
-                action_env, action_buffer = self.compute_action(state.to(self.device))
-
-            #action = self.compute_action(state.to(self.device))  # reminder: perhaps change choose_action in dqn to compute_action
+            action = self.compute_action(state.to(self.device), rand=step < self.learning_starts)
 
             reward = 0
             
-            next_state, reward, terminated, truncated, _ = self.env.step(action_env.numpy())
+            next_state, reward, terminated, truncated, _ = self.env.step(action.numpy())
             
             next_state = preprocess_data(next_state, self.model_args)
 
@@ -928,16 +856,12 @@ class TD3_Agent():
                 
                 for i in range(num_envs): #change later to be n_envs
                     # flag done as True only for terminated, so truncated doesn't affect target value
-                    self.buffer.add_transition(state[i], action_buffer[i], next_state[i], reward[i], done[i] and not truncated[i])
-                    
+                    self.buffer.add_transition(state[i], action[i], next_state[i], reward[i], done[i] and not truncated[i])
             else:
                 done = terminated or truncated
 
-                self.buffer.add_transition(state, action_buffer, next_state, reward, done and not truncated)
+                self.buffer.add_transition(state, action, next_state, reward, done and not terminated)
 
-            # soft (polyak) update; or tau = 1 for hard updates
-            
-                
             if (step >= self.learning_starts) and (step % self.train_freq == 0):
                 losses = []
                 for _ in range(self.gradient_steps):
@@ -947,7 +871,7 @@ class TD3_Agent():
                     
                     loss = self.update_q(states, actions, next_states, rewards, dones)
 
-                    #losses.append(loss.item())
+                    losses.append(loss.item())
                     
                     if policy_update_counter % self.policy_delay == 0:
                         
@@ -956,11 +880,9 @@ class TD3_Agent():
                         self.update_target(self.critic2_targ, self.critic2)
                         self.update_target(self.actor_targ, self.actor)
 
-                #writer.add_scalar("loss", np.mean(losses), step)
+                writer.add_scalar("loss", np.mean(losses), step)
                 
             state = next_state
-            
-            #raise ImportError
         
             if np.any(done):
                 end_time = time.time()
@@ -970,11 +892,11 @@ class TD3_Agent():
                     for i, d in enumerate(done):
                         if d:
                             ep_rewards.append(ep_reward[i])
-                            if len(ep_rewards) > 10:
+                            if len(ep_rewards) > 50:
                                 ep_rewards.pop(0)
                 else:
                     ep_rewards.append(ep_reward)  
-                    if len(ep_rewards) > 10:
+                    if len(ep_rewards) > 50:
                         ep_rewards.pop(0)
 
                 ep_rew_mean = sum(ep_rewards) / len(ep_rewards)
@@ -989,101 +911,13 @@ class TD3_Agent():
                 
                 episode += 1
                 
-                state, _ = self.env.reset()
+                #state, _ = self.env.reset()
+                state, _ = self.env.reset(options={"reset_mask": np.array(done, dtype=bool)})
                 #self.env.reset(options={"reset_mask": np.array(done, dtype=bool)})
                 state = preprocess_data(state, self.model_args)
                 ep_reward = 0
                 done = False
  
-        self.env.close()
-        writer.flush()
-        writer.close()
-        
-    def train(self, episodes, num_envs=None):
-        writer = SummaryWriter(log_dir='runs/' + self.file_pth) # causes overwrite issues
-        
-        step = 0
-        best_reward = -np.inf
-        start_time = time.time()
-
-        loss_policy = None
-        policy_update_counter = 0
-        
-        for episode in tqdm(range(episodes), desc="Training episodes"):
-            
-            #state = self.env.reset()
-            state, _ = self.env.reset(seed=self.seed)
-            state = preprocess_data(state, self.model_args)
-            
-            ep_reward = np.zeros(num_envs) if isinstance(self.env, vector.VectorEnv) else 0
-
-            done = False
-
-            while not np.any(done): # CHANGE np.any(~done)
-                step += 1
-
-                if step < self.learning_starts: # start_steps 
-                    action = self.env.action_space.sample()
-                    action = torch.tensor(action)
-                else:
-                    action = self.compute_action_old(state.to(self.device))
-                
-                #next_state, reward, done, _ = self.env.step(action)
-                next_state, reward, terminated, truncated, _ = self.env.step(action.numpy())
-
-                next_state = preprocess_data(next_state, self.model_args)
-                
-                if isinstance(self.env, vector.VectorEnv):
-                    done = terminated | truncated # for vectorized we need element-wise or since we're working with arrays
-
-                    for i in range(num_envs): #change later to be n_envs
-                        self.buffer.add_transition(state[i], action[i], next_state[i], reward[i], done[i]) # try changing to include truncated as well
-                        
-                else:
-                    done = terminated or truncated
-
-                    self.buffer.add_transition(state, action, next_state, reward, done)
-                
-                if (step >= self.learning_starts) and (self.buffer.size >= self.batch_size) and (step % self.train_freq == 0):
-
-                    for _ in range(self.gradient_steps):
-                        policy_update_counter += 1
-                        
-                        states, actions, next_states, rewards, dones = self.buffer.sample(self.batch_size)
-                        
-                        loss = self.update_q(states, actions, next_states, rewards, dones)
-                        
-                        if policy_update_counter % self.policy_delay == 0:
-                            
-                            loss_policy = self.update_policy(states)
-                            self.update_target(self.critic1_targ, self.critic1)
-                            self.update_target(self.critic2_targ, self.critic2)
-                            self.update_target(self.actor_targ, self.actor)
-                        
-                state = next_state
-                ep_reward += reward
-            #print(ep_reward)
-                
-            end_time = time.time()
-            
-            elapsed_time = end_time - start_time
-            
-            if isinstance(self.env, vector.VectorEnv):
-                if np.mean(ep_reward) > best_reward:
-                    best_reward = np.mean(ep_reward)
-                    print(f"\nBest episode so far! Completed episode {episode} with score {np.mean(ep_reward)}! Elapsed time: {elapsed_time} seconds. Step: {step}.")
-                writer.add_scalar("reward", np.mean(ep_reward), episode)
-            else:
-                if ep_reward > best_reward:
-                    best_reward = ep_reward
-                    print(f"\nBest episode so far! Completed episode {episode} with score {ep_reward}! Elapsed time: {elapsed_time} seconds. Step: {step}.")
-                writer.add_scalar("reward", ep_reward, episode)
-            
-            self.actor.save_model(self.file_pth)
-
-            #if loss_policy is not None:
-            #    writer.add_scalar("loss", loss_policy, episode)
-            
         self.env.close()
         writer.flush()
         writer.close()
@@ -1129,8 +963,9 @@ class SAC_Agent():
     def __init__(
             self,
             env,
-            file_pth,
+            training_args,
             model_args,
+            file_pth,
             lr_critic=1e-3,
             lr_actor=1e-4,
             buffer_size=1_000_000,
@@ -1255,529 +1090,4 @@ class SAC_Agent():
                 if (step < self.buffer.counter):
                     states, actions, next_states, rewards, terminations = self.buffer.sample(self.batch_size)
                     self.update_critic(states, actions, next_states, rewards, terminations)
-
-
-
-
-class TD3_Agentd():
-    """
-    A Twin-Delayed DDPG agent.
-    
-    Args:
-        env (gym.Env): The environment to train on.
-        file_pth (str): Directory path to save models, logs, and configurations.
-        model_args (dict): Arguments for constructing the actor and critic networks.
-
-        lr_critic (float): Learning rate for the critic network. Defaults to 1e-3.
-        lr_actor (float): Learning rate for the actor network. Defaults to 1e-3.
-        buffer_size (int): Maximum size of the replay buffer. Defaults to 1,000,000.
-        learning_starts (int): Number of steps before training starts and transitions are sampled. Defaults to 100.
-        batch_size (int): Size of minibatch sampled from the replay buffer. Defaults to 256.
-        tau (float): Target smoothing coefficient (Polyak averaging). Defaults to 0.005.
-        gamma (float): Discount factor for future rewards. Defaults to 0.99.
-        optimizer_type (str): Optimizer to use ('Adam', 'SGD', etc.). Defaults to 'Adam'.
-        train_freq (int): Number of steps between gradient updates. Defaults to 1.
-        gradient_steps (int): Number of gradient updates per training step. Defaults to 1.
-        noise_type (str): Type of exploration noise to add to actions ('Gaussian' or 'Ornstein-Uhlenbeck'). Defaults to 'Gaussian'.
-        noise_std (float): Standard deviation of the exploration noise. Defaults to 0.1.
-        policy_delay (int): Frequency of delayed policy updates relative to critic updates. Defaults to 2.
-        seed (int, optional): Random seed for reproducibility. Defaults to None.
-
-    Note: This agent is intended to work with only continuous action spaces.
-    """
-
-    def __init__(
-            self, 
-            env, 
-            file_pth, 
-            model_args, 
-            lr_critic=1e-3,
-            lr_actor=1e-3,
-            buffer_size=1_000_000,
-            learning_starts=100,
-            batch_size=256,
-            tau=0.005,
-            gamma=0.99,
-            optimizer_type='Adam',
-            train_freq=1,
-            gradient_steps=1,
-            noise_type='Gaussian',
-            noise_std=0.1,
-            policy_delay=2,
-            seed=None,
-    ):
-        self.env = env
-        self.file_pth = file_pth
-        self.model_args = model_args
-        self.lr_critic = lr_critic
-        self.lr_actor = lr_actor
-        self.buffer_size = buffer_size
-        self.learning_starts = learning_starts
-        self.batch_size = batch_size
-        self.tau = tau
-        self.gamma = gamma
-        self.optimizer_type = optimizer_type
-        self.train_freq = train_freq
-        self.gradient_steps = gradient_steps
-        self.noise_type = noise_type
-        self.noise_std = noise_std
-        self.policy_delay = policy_delay
-        self.seed = seed
-        
-        if self.seed is not None:
-            random.seed(self.seed)
-            np.random.seed(self.seed)
-            torch.manual_seed(self.seed)
-            torch.cuda.manual_seed(self.seed)
-            torch.cuda.manual_seed_all(self.seed)
-            torch.backends.cudnn.deterministic = True
-            torch.backends.cudnn.benchmark = False
-            env.action_space.seed(self.seed)
-
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"device: {self.device}")
-
-        if isinstance(self.env, vector.VectorEnv): # check if vectorized env (specifically stable baseline's VecEnv class)
-            state, _ = self.env.reset()
-            state = preprocess_data(state, model_args)
-            state_dim = state.shape[1:] # consider just using env.observation_space
-            action_dim = self.env.action_space.shape[1] # may need to change if action space is multiple dimension as in shape (n, m),  (n, m, o), etc.
-            action_max = float(self.env.action_space.high[0][0])
-        else:
-            state, _ = self.env.reset(seed=self.seed)
-            state = preprocess_data(state, model_args)
-            state_dim = state.shape
-            action_dim = self.env.action_space.shape[0]
-            action_max = float(self.env.action_space.high[0])
-
-        #state = preprocess_data(state, model_args)
-         
-        if not model_args['continuous']:
-            raise ValueError("The TD3 agent only works on continuous action spaces. Consider DQN or VPG for discrete.")
-
-        self.critic1 = Critic(state_dim, action_dim, model_args).to(self.device)
-        self.critic2 = Critic(state_dim, action_dim, model_args).to(self.device)
-        self.critic1_targ = Critic(state_dim, action_dim, model_args).to(self.device)
-        self.critic2_targ = Critic(state_dim, action_dim, model_args).to(self.device)
-        self.critic1_targ.load_state_dict(self.critic1.state_dict()) # use hard update method
-        self.critic2_targ.load_state_dict(self.critic2.state_dict())
-        
-        model_args['output_transform'] = 'tanh'
-        self.actor = General_NN(state_dim, action_dim, model_args, action_max).to(self.device)
-        #self.actor.apply(self.init_weights)
-        self.actor_targ = General_NN(state_dim, action_dim, model_args, action_max).to(self.device)
-        self.actor_targ.load_state_dict(self.actor.state_dict())
-
-        self.loss_fn = initialize_loss(model_args['loss'])
-        
-        self.critic_optimizer = initialize_optimizer(
-            list(self.critic1.parameters()) + list(self.critic2.parameters()),
-            self.optimizer_type,
-            self.lr_critic
-        )
-        self.actor_optimizer = initialize_optimizer(
-            self.actor.parameters(),
-            self.optimizer_type,
-            self.lr_actor
-        )
-        self.buffer = ReplayBufferDeque(self.buffer_size, self.device)
-        
-        # ignore if not used
-        self.ou_noise = OU_Noise(
-            size=action_dim, 
-            seed=1,
-            mu=0.0,
-            theta=0.15, 
-            sigma=noise_std
-        )
-        self.ou_noise.reset()
-
-        self.action_low = torch.tensor(self.env.action_space.low, dtype=torch.float32)
-        self.action_high = torch.tensor(self.env.action_space.high, dtype=torch.float32)
-    
-    def init_weights(self, layer):
-        """Xaviar Initialization of weights"""
-        if(type(layer) == nn.Linear):
-          nn.init.xavier_normal_(layer.weight)
-          layer.bias.data.fill_(0.01)
-
-    def compute_action(self, state):
-        """
-        Computes a continuous action with exploratory Gaussian noise.
-
-        Args:
-            state (torch.Tensor): The current state, shape (state_dim,) or (c, h, w).
-
-        Returns:
-            action (torch.Tensor): A tensor of shape (action_dim,) representing the selected 
-                            continuous action with exploration noise added. The action is clipped 
-                            to lie within the environment's action space bounds.
-
-        Note: To avoid mismatch error, add batch dimension to state.
-        """
-        # [obsolete] if discrete, the output of policynn is likely a distribution for actions which u can either sample (stochastic policy) or choose max from (deterministic)
-        
-        # Action is a tensor on cuda so copy to cpu for env to process it when taking step. This wasn't an issue in dqn implementation bc we used .item(), 
-        # but we want action to remain as tensors (fact check) so just move to cpu manually. Check with bipedal walker.
-        with torch.no_grad():
-            action = self.actor(state.unsqueeze(0)).squeeze(0).cpu() # Add batch dim just for input to model. Detach from grad.
-        
-            if self.noise_type == 'OU':
-                expl_noise = self.ou_noise.sample() # consider expl_noise = torch.tensor(self.ou_noise.sample(), dtype=torch.float32).to(self.device)
-            elif self.noise_type == 'Gaussian':
-                #expl_noise_std = self.noise_std #0.1 * float(self.env.action_space.high[0])
-
-                expl_noise = torch.randn_like(action) * self.noise_std#expl_noise_std
-            else:
-                raise NotImplementedError("Noise type not implemented!")
-            
-            action += expl_noise
-        
-        #low = torch.tensor(self.env.action_space.low, dtype=action.dtype)
-        #high = torch.tensor(self.env.action_space.high, dtype=action.dtype)
-
-        return torch.clamp(action, self.action_low, self.action_high)
-    
-    def compute_action_test(self, state, rand=False):
-        """
-        Computes a continuous action with exploratory Gaussian noise.
-
-        Args:
-            state (torch.Tensor): 
-                The current state, shape `(state_dim,)` or `(c, h, w)`.
-
-        Returns:
-            action (torch.Tensor): 
-                A tensor of shape `(action_dim,)` representing the selected 
-                continuous action with exploration noise added. The action is clipped 
-                to lie within the environment's action space bounds.
-
-        Note: To avoid mismatch error, add batch dimension to state.
-        """
-        # Action is a tensor on cuda so copy to cpu for env to process it when taking step. [obsolete] This wasn't an issue in dqn implementation bc we used .item(), 
-        # but we want action to remain as tensors (fact check) so just move to cpu manually. Check with bipedal walker.
-        if rand:
-            action = self.env.action_space.sample()
-            action = torch.tensor(action)
-        else:
-            with torch.no_grad():
-                action = self.actor(state.unsqueeze(0)).squeeze(0).cpu() # Add batch dim just for input to model. Detach from grad.
-        # shapes may be diff for discrete cases; ignore for now
-        #if isinstance(self.action_space, spaces.Box):
-        action_scaled = 2.0 * ((action - self.action_low) / (self.action_high - self.action_low)) - 1.0
-
-        if self.noise_type == 'OU':
-            expl_noise = self.ou_noise.sample() # consider expl_noise = torch.tensor(self.ou_noise.sample(), dtype=torch.float32).to(self.device)
-        elif self.noise_type == 'Gaussian':
-            #expl_noise_std = self.noise_std #0.1 * float(self.env.action_space.high[0])
-            expl_noise = torch.randn_like(action_scaled) * self.noise_std#expl_noise_std
-        else:
-            raise NotImplementedError("Noise type not implemented!")
-        
-        action_scaled += expl_noise
-
-        action_scaled = torch.clamp(action, self.action_low, self.action_high)
-
-        action_buffer = action_scaled
-
-        action_env = self.action_low + (0.5 * (action_scaled + 1.0) * (self.action_high - self.action_low))
-        return action_env, action_buffer
-
-    def update_q(self, states, actions, next_states, rewards, terminations):
-        """
-        Performs a TD3-style update of the Q-networks using target policy smoothing.
-
-        Args:
-            states (torch.Tensor): Batch of current states, shape (batch_size, state_dim).
-            actions (torch.Tensor): Batch of actions taken, shape (batch_size,).
-            next_states (torch.Tensor): Batch of next states, shape (batch_size, state_dim).
-            rewards (torch.Tensor): Batch of rewards received, shape (batch_size,).
-            terminations (torch.Tensor): Batch of done flags (1 if terminal), shape (batch_size,).
-
-        Returns:
-            losses (torch.Tensor): The loss values for critic1 and critic2 respectively.
-        """
-        # States is of shape torch.Size([batch, features]) but actions is of shape torch.Size([batch]). Convert actions to torch.Size([batch, 1])
-    
-        if isinstance(self.env, vector.VectorEnv):
-            action_clip = float(self.env.action_space.high[0][0])
-        else:
-            action_clip = float(self.env.action_space.high[0])
-        
-        with torch.no_grad():
-            targ_actions = self.actor_targ(next_states)
-
-            policy_noise_std = 0.2
-            noise = torch.normal(mean=0.0, std=policy_noise_std, size=targ_actions.shape).to(self.device)
-            noise_clip = 0.5#action_clip * 0.5 # general case from ChatGPT. Fact check.
-
-            targ_actions_clamped = torch.clamp(
-                targ_actions + torch.clamp(
-                    noise,
-                    min=-noise_clip,
-                    max=noise_clip
-                ),
-                min=-action_clip,
-                max=action_clip
-            )
-            # change gamma to alg_args
-            q_targ = rewards.unsqueeze(-1) + self.gamma * torch.min(
-                self.critic1_targ(next_states, targ_actions_clamped),
-                self.critic2_targ(next_states, targ_actions_clamped),
-            ) * (1 - terminations.unsqueeze(-1))
-        
-        q_pred1 = self.critic1(states, actions)
-        q_pred2 = self.critic2(states, actions)
-        
-        loss1 = self.loss_fn(q_pred1, q_targ)
-        loss2 = self.loss_fn(q_pred2, q_targ)
-        #print(loss1, loss2, "ls")
-        loss = (loss1 + loss2) / 2 # need the /2 unless we use the same network to produce q1 and q2
-        self.critic_optimizer.zero_grad()
-        loss.backward()
-        #loss1.backward()
-        #loss2.backward()
-        #torch.nn.utils.clip_grad_norm_(self.critic1.parameters(), 5)
-        #torch.nn.utils.clip_grad_norm_(self.critic2.parameters(), 5)
-        self.critic_optimizer.step()
-        
-        return loss#loss1, loss2
-
-    def update_policy(self, states, ep=0):
-        """
-        Updates the policy network by maximizing the predicted Q-values from critic1.
-
-        Args:
-            states (torch.Tensor): Batch of environment states, shape (batch_size, state_dim).
-
-        Returns:
-            loss (torch.Tensor): Scalar policy loss used for optimization.
-        """
-        
-        actions = self.actor(states) # may need clipping here
-        #if ep > 30:
-        #    print("actions", actions, "q", self.critic1(states, actions))
-        loss = -torch.mean(self.critic1(states, actions))
-        self.actor_optimizer.zero_grad()
-        loss.backward()
-        #torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 5)
-        self.actor_optimizer.step()
-        
-        return loss
-
-    def hard_update_target(self, target, source):
-        target.load_state_dict(source.state_dict())
-
-    def soft_update_target(self, target, source):
-        for target_param, param in zip(target.parameters(), source.parameters()):
-            target_param.data.copy_(target_param.data * (1.0 - self.tau) + param.data * self.tau)
-
-    def update_target(self, target_nn, source_nn): # CHANGE NAME TO JUST UPDATE_TARGET; change def doc on tau
-        """
-        Performs hard or soft update based on tau.
-        """
-        with torch.no_grad():
-            for target_param, param in zip(target_nn.parameters(), source_nn.parameters()):
-                target_param.data.copy_(target_param.data * (1.0 - self.tau) + param.data * self.tau)
-
-    def train2(self, episodes):
-        
-        writer = SummaryWriter(log_dir='runs/' + self.file_pth) # causes overwrite issues
-
-        step = 0
-        best_reward = -9999999
-        start_time = time.time()
-
-        loss_policy = None
-        policy_update_counter = 0
-        
-        for episode in tqdm(range(episodes), desc="Training episodes"):
-            
-            state, _ = self.env.reset(seed=self.seed)
-            state = preprocess_data(state, self.model_args)
-            
-            ep_reward = 0
-            terminated = False
-            truncated = False
-            done = terminated or truncated
-            while not (done):
-                step += 1
-
-                if step < self.learning_starts: # start_steps 
-                    action = self.env.action_space.sample()
-                    action = torch.tensor(action, dtype=torch.float32)
-                else:
-                    action = self.compute_action(state.to(self.device))
-                #print(action)
-                
-                next_state, reward, terminated, truncated, _ = self.env.step(action.numpy())
-                
-                next_state = preprocess_data(next_state, self.model_args)
-                
-                done = terminated or truncated
-
-                self.buffer.add_transition(state, action, next_state, reward, done)
-                
-                if (step >= self.learning_starts) and (self.buffer.counter >= self.batch_size) and (step % self.train_freq == 0):
-
-                    for _ in range(self.gradient_steps):
-                        policy_update_counter += 1
-
-                        states, actions, next_states, rewards, dones = self.buffer.sample(self.batch_size)
-                        
-                        loss = self.update_q(states, actions, next_states, rewards, dones)
-
-                        if policy_update_counter % self.policy_delay == 0:
-                            loss_policy = self.update_policy(states, episode)
-                            self.soft_update_target(self.critic1_targ, self.critic1)
-                            self.soft_update_target(self.critic2_targ, self.critic2)
-                            self.soft_update_target(self.actor_targ, self.actor)
-                        
-                state = next_state
-
-                ep_reward += reward
-
-            end_time = time.time()
-            elapsed_time = end_time - start_time
-
-            if ep_reward > best_reward:
-                best_reward = ep_reward
-                print(f"\nBest episode so far! Completed episode {episode} with score {ep_reward}! Elapsed time: {elapsed_time} seconds. Step: {step}.")
-
-            self.actor.save_model(self.file_pth)
-
-            writer.add_scalar("reward", ep_reward, episode)
-            if loss_policy is not None:
-                writer.add_scalar("loss", loss_policy, episode)
-            
-        self.env.close()
-        writer.flush()
-        writer.close()
-
-    def train(self, episodes, num_envs=None):
-        writer = SummaryWriter(log_dir='runs/' + self.file_pth) # causes overwrite issues
-        
-        step = 0
-        best_reward = -np.inf
-        start_time = time.time()
-
-        loss_policy = None
-        policy_update_counter = 0
-        
-        for episode in tqdm(range(episodes), desc="Training episodes"):
-            
-            #state = self.env.reset()
-            state, _ = self.env.reset(seed=self.seed)
-            state = preprocess_data(state, self.model_args)
-            
-            ep_reward = np.zeros(num_envs) if isinstance(self.env, vector.VectorEnv) else 0
-
-            done = False
-
-            while not np.any(done): # CHANGE np.any(~done)
-                step += 1
-
-                if step < self.learning_starts: # start_steps 
-                    action = self.env.action_space.sample()
-                    action = torch.tensor(action)
-                else:
-                    action = self.compute_action(state.to(self.device))
-                
-                #next_state, reward, done, _ = self.env.step(action)
-                next_state, reward, terminated, truncated, _ = self.env.step(action.numpy())
-
-                next_state = preprocess_data(next_state, self.model_args)
-                
-                if isinstance(self.env, vector.VectorEnv):
-                    done = terminated | truncated # for vectorized we need element-wise or since we're working with arrays
-
-                    for i in range(num_envs): #change later to be n_envs
-                        self.buffer.add_transition(state[i], action[i], next_state[i], reward[i], done[i]) # try changing to include truncated as well
-                        
-                else:
-                    done = terminated or truncated
-
-                    self.buffer.add_transition(state, action, next_state, reward, done)
-                
-                if (step >= self.learning_starts) and (self.buffer.size >= self.batch_size) and (step % self.train_freq == 0):
-
-                    for _ in range(self.gradient_steps):
-                        policy_update_counter += 1
-                        
-                        states, actions, next_states, rewards, dones = self.buffer.sample(self.batch_size)
-                        
-                        loss = self.update_q(states, actions, next_states, rewards, dones)
-                        
-                        if policy_update_counter % self.policy_delay == 0:
-                            
-                            loss_policy = self.update_policy(states, episode)
-                            self.soft_update_target(self.critic1_targ, self.critic1)
-                            self.soft_update_target(self.critic2_targ, self.critic2)
-                            self.soft_update_target(self.actor_targ, self.actor)
-                        
-                state = next_state
-                ep_reward += reward
-            #print(ep_reward)
-                
-            end_time = time.time()
-            
-            elapsed_time = end_time - start_time
-            
-            if isinstance(self.env, vector.VectorEnv):
-                if np.mean(ep_reward) > best_reward:
-                    best_reward = np.mean(ep_reward)
-                    print(f"\nBest episode so far! Completed episode {episode} with score {np.mean(ep_reward)}! Elapsed time: {elapsed_time} seconds. Step: {step}.")
-                writer.add_scalar("reward", np.mean(ep_reward), episode)
-            else:
-                if ep_reward > best_reward:
-                    best_reward = ep_reward
-                    print(f"\nBest episode so far! Completed episode {episode} with score {ep_reward}! Elapsed time: {elapsed_time} seconds. Step: {step}.")
-                writer.add_scalar("reward", ep_reward, episode)
-            
-            self.actor.save_model(self.file_pth)
-
-            #if loss_policy is not None:
-            #    writer.add_scalar("loss", loss_policy, episode)
-            
-        self.env.close()
-        writer.flush()
-        writer.close()
-
-    def test(self, model_path):
-            self.actor.load_model(model_path)
-
-            state, _ = self.env.reset(seed=self.seed)
-            state = preprocess_data(state, self.model_args)
-
-            ep_reward = 0
-            terminated = False
-            truncated = False
-            step = 0
-
-            while not (terminated or truncated):
-                
-                with torch.no_grad():
-                    action = self.actor(state.to(self.device).unsqueeze(0)).squeeze(0).detach().cpu()
-                    action = torch.clamp(
-                        action,
-                        min=float(self.env.action_space.low[0]),
-                        max=float(self.env.action_space.high[0])
-                    )
-                
-                step += 1
-
-                next_state, reward, terminated, truncated, _ = self.env.step(action.numpy())
-
-                ep_reward += reward
-        
-                if (terminated or truncated):
-                    print(f"Game end at step: {step}, reward: {ep_reward}!")
-                    break
-                
-                if step % 500 == 0:
-                    print(f"Step: {step}!")
-
-                next_state = preprocess_data(next_state, self.model_args)
-                state = next_state
-
 

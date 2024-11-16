@@ -1,0 +1,43 @@
+game:
+  name: bipedalwalker
+  version: BipedalWalker-v3
+  #render_mode: human
+training:
+  alg: TD3
+  #episodes: 50000
+  timesteps: 100000000
+  save_model: true
+  name_tag: "_vec_test"
+  vectorized: true
+  num_envs: 4
+model:
+  continuous: true
+  nn_type: DNN
+  loss: MSE
+  activation: relu
+  layer_args:
+    - layer_type: fcl
+      n_out: 400
+    - layer_type: fcl
+      n_out: 300
+parameters:
+  lr_critic: 1.0e-3
+  lr_actor: 1.0e-3
+  gamma: 0.98
+  buffer_size: 200000
+  batch_size: 256
+  learning_starts: 10000
+  train_freq: 1
+  gradient_steps: 1
+  noise_type: Gaussian
+  noise_std: 0.2
+  seed: 16
+
+  # need learning starts seemingly. otherwise, there's little to no exploration and it converges to bad policy
+  # as can be seen by printed action values ranging in high 0.9-1. Regardless, seems to consistenly converge to ~270-280. Solution: vectorized env.
+
+  # using truncated should spike less early but reach convergence relatively faster and optimal.
+
+  # Note that when using vectorized envs where envs reset whenever any env is done, the reward will be artificially be higher due to the other envs not getting -100 for falling.
+
+  # my question is why can't the agent converge quickly when its sequence of actions to run should be relatively similar. maybe due to having to learn different, faster strides.

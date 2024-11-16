@@ -9,7 +9,7 @@ import os
 from typing import Type, Union
 
 # This method is implemented here to make agents' docstrings conveniently accessible.
-def initialize_agent(env, type, file_pth, model_args, parameters):
+def initialize_agent(env, training_args, model_args, parameters, file_pth):
     """
     Initializes a RL agent based on given settings.
 
@@ -26,12 +26,12 @@ def initialize_agent(env, type, file_pth, model_args, parameters):
         'TD3': TD3_Agent
     }
     
-    Agent = agent_classes.get(type)
+    Agent = agent_classes.get(training_args['alg'])
 
     if Agent is None:
         raise NotImplementedError("Agent type is not implemented!")
-
-    return Agent(env, file_pth, model_args, **parameters)
+    
+    return Agent(env, training_args, model_args, file_pth, **parameters)
 
 if __name__ == "__main__":
     
@@ -55,7 +55,7 @@ if __name__ == "__main__":
     # Naming model for saves. If save not necessary, name will be '[game]_latest'.
     timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     game_name = game_args['name']
-    model_name = f"{game_name}_{timestamp}{training_args['name_tag']}"
+    model_name = f"{game_name}_{timestamp}{training_args.get('name_tag', '')}"
     if not training_args['save_model']:
         model_name = game_name + '_latest'
 
@@ -65,20 +65,19 @@ if __name__ == "__main__":
     shutil.copy(config_path, os.path.join('models', f'{file_pth}.yaml'))
 
     # Inputs to environment/agent initializations and training.
-    alg_type = training_args['alg']
     vectorized = training_args['vectorized']
     num_envs = training_args['num_envs']
-    episodes = training_args['episodes']
+    #episodes = training_args['episodes']
     timesteps = training_args['timesteps']
     seed = parameters['seed']
     
     # Initialize game environment. Note that vectorized env is available but the envs are not entirely independent due to shared resets.
     env = get_env(game_args, model_args, seed=seed, vectorize=vectorized, num_envs=num_envs)
     
-    agent = initialize_agent(env, alg_type, file_pth, model_args, parameters) 
+    agent = initialize_agent(env, training_args, model_args, parameters, file_pth) 
     #agent = TD3_Agent(env, file_pth, model_args, **parameters) 
     
-    agent.train_new(timesteps, num_envs)
+    agent.train(timesteps, num_envs)
 
     # consider separate performance memory to sample from the good experiences so that it isnt replaced with bad ones.
 

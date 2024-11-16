@@ -203,8 +203,11 @@ class General_NN(nn.Module):
             transform = initialize_output_transform(output_transform)
 
             x = transform(x)
-
-            # Scale only for continuous actions + tanh (actor-critic methods)
+            
+            # scale only for continuous actions + tanh (actor-critic methods)
+            # we first transformed with tanh to prevent arbitrarily large outputs
+            # now we scale to map actions back to env space 
+            # assumes symmetric action space, e.g. [-x, x]
             if output_transform == 'tanh' and self.model_args['continuous']:
                 x = x * self.action_max
 

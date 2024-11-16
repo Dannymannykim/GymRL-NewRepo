@@ -1,0 +1,34 @@
+game:
+  name: pendulum
+  version: Pendulum-v1
+  #render_mode: human
+training:
+  alg: TD3
+  episodes: 500
+  timesteps: 1000000
+  save_model: true
+  name_tag: "_test"
+  #vectorized: false
+  #num_envs: 4
+model:
+  continuous: true
+  nn_type: DNN
+  loss: MSE
+  activation: relu
+  layer_args:
+    - layer_type: fcl
+      n_out: 400
+    - layer_type: fcl
+      n_out: 300
+parameters:
+  lr_critic: 1.0e-3
+  lr_actor: 1.0e-3
+  gamma: 0.98
+  buffer_size: 200000
+  batch_size: 256
+  learning_starts: 10000
+  train_freq: 1
+  gradient_steps: 1
+  noise_type: Gaussian
+  noise_std: 0.1
+  #seed: 0

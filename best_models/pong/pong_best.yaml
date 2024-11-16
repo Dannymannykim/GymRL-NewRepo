@@ -1,0 +1,49 @@
+game:
+  name: pong
+  version: ALE/Pong-v5
+  frame_stack: 4
+  #max_episode_steps: 10000
+training:
+  alg: DQN
+  timesteps: 100000000
+  save_model: true
+  name_tag: "_testnew"
+model:
+  nn_type: CNN
+  loss: Huber
+  layer_args:
+    - layer_type: conv
+      n_out: 8
+      kernel_size: 4
+      stride: 2
+      padding: 0
+    - layer_type: conv
+      n_out: 16
+      kernel_size: 4
+      stride: 2
+      padding: 0
+    - layer_type: conv
+      n_out: 32
+      kernel_size: 3
+      stride: 2
+      padding: 0
+    - layer_type: flatten
+    - layer_type: fcl
+      n_out: 256
+    - layer_type: fcl
+      n_out: 256
+    - layer_type: fcl
+      n_out: 256
+parameters:
+  lr: 0.0001
+  buffer_size: 100000
+  batch_size: 32
+  gamma: 0.99
+  epsilon: 1
+  epsilon_min: 0.01
+  exp_frac: 0.1
+  target_update_interval: 1000
+  learning_starts: 100000
+  gradient_steps: 1
+  train_freq: 4
+  #seed: 1

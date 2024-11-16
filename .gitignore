@@ -9,3 +9,14 @@ runs/
 tensorboard_logs/
 tuning_configs/
 __pycache__/
+configs_bipedalwalker.yaml
+configs_breakout.yaml
+configs_cartpole.yaml
+configs_lunarlander.yaml
+configs_mountaincar_cont.yaml
+configs_mountaincar.yaml
+configs_pendulum.yaml
+configs_pong.yaml
+considerations.txt
+custom_pong_ai_agent.py
+custom_pong_env.py

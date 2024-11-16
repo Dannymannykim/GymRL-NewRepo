@@ -90,7 +90,7 @@ def compile_args(path):
         path (str): The path to the configuration or environment data. This may be used to load specific settings or configurations.
 
     Returns:
-        dict: game_args, preprocess_args, training_args, model_args, parameters
+        dict: game_args, preprocess_args (obsolete), training_args, model_args, parameters
     """
 
     with open(path, encoding="utf-8") as file:
