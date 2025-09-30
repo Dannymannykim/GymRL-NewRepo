@@ -14,7 +14,7 @@ To train agent:
     python train.py --config configuration.yaml
 
 To run your agent:
-    python test.py --model models/model.pty
+    python test.py --model models/model.pt
   
 
 Some working agents of certain games are provided. Training took a long time so others were excluded.
