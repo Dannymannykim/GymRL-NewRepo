@@ -1,7 +1,7 @@
 # RL Training Framework
 
 This project provides a flexible framework for training reinforcement learning (RL) agents with minimal setup.  
-The algorithms are implemented from scratch using PyTor
+The algorithms are implemented from scratch using PyTorch.
 You can specify configurations for:
 
 - **Model architectures** (CNNs, fully-connected networks, etc.)  
@@ -9,6 +9,13 @@ You can specify configurations for:
 - **Training settings & algorithms** (DQN, DDQN, VPG, TD3, SAC, etc.)  
 
 By defining your setup in a single YAML file, you can easily experiment with different models, games, and training hyperparameters without changing the source code.
+
+To train agent:
+    python train.py --config configuration.yaml
+
+To run your agent:
+    python test.py --model models/model.pty
+  
 
 Some working agents of certain games are provided. Training took a long time so others were excluded.
 ---
