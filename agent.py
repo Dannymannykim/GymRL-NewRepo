@@ -15,6 +15,8 @@ from torch.distributions import Normal
 from ou_noise import OU_Noise
 import gymnasium as gym
 from gymnasium import vector
+import imageio
+import os
 
 def initialize_agent(env, training_args, model_args, parameters, file_pth):
     """
@@ -328,7 +330,7 @@ class DQN_Agent():
         writer.flush()
         writer.close()
 
-    def test(self, model_path):
+    def test(self, model_path, save_gif=False, gif_name=None):
         self.policy_nn.load_model(model_path)
 
         state, _ = self.env.reset()
@@ -339,17 +341,23 @@ class DQN_Agent():
         truncated = False
         step = 0
 
+        frames = []
+
         while not (terminated or truncated):
             action = self.choose_action(state.to(self.device), epsilon=0.05) 
 
             reward = 0
             step += 1
+
+            if save_gif:
+                frame = self.env.render()
+                frames.append(frame)
                 
             for i in range(self.step_repeat):
                 next_state, step_reward, terminated, truncated, _ = self.env.step(action.numpy())
                 reward += step_reward
     
-                if terminated:
+                if terminated or truncated:
                     print(f"Game end at step: {step}, reward: {ep_reward}!")
                     break
             
@@ -359,6 +367,14 @@ class DQN_Agent():
             next_state = preprocess_data(next_state, self.model_args)
             state = next_state
             ep_reward += reward
+        
+        self.env.close()
+
+        if save_gif:
+            folder = "gifs"
+            os.makedirs(folder, exist_ok=True)  # creates folder if it doesn't exist
+            gif_path = os.path.join(folder, gif_name + ".gif")
+            imageio.mimsave(gif_path, frames, fps=40, loop=0)
 
 class VPG_Agent():
     """
@@ -922,42 +938,57 @@ class TD3_Agent():
         writer.flush()
         writer.close()
 
-    def test(self, model_path):
-            self.actor.load_model(model_path)
+    def test(self, model_path, save_gif, gif_name):
+        self.actor.load_model(model_path)
 
-            state, _ = self.env.reset(seed=self.seed)
-            state = preprocess_data(state, self.model_args)
+        state, _ = self.env.reset(seed=self.seed)
+        state = preprocess_data(state, self.model_args)
 
-            ep_reward = 0
-            terminated = False
-            truncated = False
-            step = 0
+        ep_reward = 0
+        terminated = False
+        truncated = False
+        step = 0
 
-            while not (terminated or truncated):
-                
-                with torch.no_grad():
-                    action = self.actor(state.to(self.device).unsqueeze(0)).squeeze(0).detach().cpu()
-                    action = torch.clamp(
-                        action,
-                        min=float(self.env.action_space.low[0]),
-                        max=float(self.env.action_space.high[0])
-                    )
-                
-                step += 1
+        frames = []
 
-                next_state, reward, terminated, truncated, _ = self.env.step(action.numpy())
+        while not (terminated or truncated):
+            
+            with torch.no_grad():
+                action = self.actor(state.to(self.device).unsqueeze(0)).squeeze(0).detach().cpu()
+                action = torch.clamp(
+                    action,
+                    min=float(self.env.action_space.low[0]),
+                    max=float(self.env.action_space.high[0])
+                )
+            
+            if save_gif:
+                frame = self.env.render()
+                frames.append(frame)
 
-                ep_reward += reward
+            step += 1
+
+            next_state, reward, terminated, truncated, _ = self.env.step(action.numpy())
+
+            ep_reward += reward
+    
+            if (terminated or truncated):
+                print(f"Game end at step: {step}, reward: {ep_reward}!")
+                break
+            
+            if step % 500 == 0:
+                print(f"Step: {step}!")
+
+            next_state = preprocess_data(next_state, self.model_args)
+            state = next_state
         
-                if (terminated or truncated):
-                    print(f"Game end at step: {step}, reward: {ep_reward}!")
-                    break
-                
-                if step % 500 == 0:
-                    print(f"Step: {step}!")
+        self.env.close()
 
-                next_state = preprocess_data(next_state, self.model_args)
-                state = next_state
+        if save_gif:
+            folder = "gifs"
+            os.makedirs(folder, exist_ok=True)  # creates folder if it doesn't exist
+            gif_path = os.path.join(folder, gif_name + ".gif")
+            imageio.mimsave(gif_path, frames, fps=40, loop=0)
+            
 
 class SAC_Agent():
     def __init__(

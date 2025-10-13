@@ -17,8 +17,11 @@ if __name__ == "__main__":
         The defaul game is Pong."""
     )
     parser.add_argument('--model', default='models/pong_latest.pt', type=str, help="Path to the model file (default: 'models/pong_latest.pt')")
+    parser.add_argument('--save_gif', action='store_true', help="If set, save a GIF of the episode" )
     args = parser.parse_args()
     model_path = args.model
+    save_gif = args.save_gif
+
     config_path = model_path.replace('.pt', '.yaml')
 
     game_args, _, training_args, model_args, parameters = compile_args(config_path)
@@ -26,14 +29,17 @@ if __name__ == "__main__":
     game_args.setdefault('max_episode_steps', None)
     game_args.setdefault('render_mode', 'rgb_array')
     game_args.setdefault('frame_stack', None)
+
     # Optional for manually changing certain settings
     seed = None
     parameters['seed'] = seed
     game_args['render_mode'] = 'human'
+    if save_gif:
+        game_args['render_mode'] = 'rgb_array'
     #alg_type = training_args['alg']
     
     env = get_env(game_args, model_args)#get_CustomAtariEnv(model_args, preprocess_args, game_args)#get_env(model_args)
     file_pth = None
     agent = initialize_agent(env, training_args, model_args, parameters, file_pth) #TD3_Agent(env, file_pth, model_args, **parameters) 
 
-    agent.test(model_path)
+    agent.test(model_path, save_gif=True, gif_name=game_args['name'])
