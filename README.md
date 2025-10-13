@@ -17,8 +17,21 @@ To run your agent:
     python test.py --model models/model.pt
   
 
-Some working agents of certain games are provided. Training took a long time so others were excluded.
+Here are some examples:
 ---
+
+<p float="left">
+  <img src="gifs/cartpole.gif" width="300" />
+  <img src="gifs/mountaincar.gif" width="300" />
+    <img src="gifs/pendulum.gif" width="300" />
+</p>
+
+<p float="left">
+  <img src="gifs/bipedalwalker.gif" width="300" />
+  <img src="gifs/pong.gif" width="300" />
+</p>
+
+Note that training an agent on Pong requires more time and modifying the environment to randomize serves, so that the agent does not overfit a single sequence of moves as shown above.
 
 ## YAML Configuration Documentation
 
